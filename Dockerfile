@@ -1,5 +1,5 @@
 
-FROM drupal:10.3.5-php8.3
+FROM drupal:10.3.6-php8.3
 
 WORKDIR /opt/drupal
 
@@ -32,17 +32,18 @@ RUN \
     composer require 'drupal/jsonapi_include:1.8' --with-all-dependencies  && \
     composer require 'drupal/menu_admin_per_menu:1.6' --with-all-dependencies  && \
     composer require 'drupal/ckeditor5_fullscreen:1.0.0-beta10' --with-all-dependencies  && \
-    composer require 'drupal/menu_link_attributes:1.5' --with-all-dependencies
-
+    composer require 'drupal/menu_link_attributes:1.5' --with-all-dependencies && \
+    composer require 'drupal/jsonapi_extras:3.26' --with-all-dependencies
 #d10
+#drupal/drush_language critical
+#drupal/administerusersbyrole critical
 RUN \
     --mount=type=cache,target=/var/cache/apt \
     composer require 'drupal/editor_paste_plain:1.0.0-beta1' --with-all-dependencies  && \
     composer require 'drupal/fpa:4.0.0' --with-all-dependencies  && \
-    composer require 'drupal/jsonapi_extras:3.25' --with-all-dependencies  && \
     composer require 'drupal/administerusersbyrole:3.4' --with-all-dependencies  && \
     composer require 'drupal/quick_node_clone:1.18'  --with-all-dependencies  && \
-    composer require 'drupal/drush_language:1.0-rc5' --with-all-dependencies 
+    composer require 'drupal/drush_language:1.0-rc5' --with-all-dependencies  
 
 RUN rm -rf /opt/drupal/web/modules/contrib/login_destination
 RUN rm -rf /opt/drupal/web/modules/contrib/ckeditor_templates
@@ -52,7 +53,5 @@ RUN rm -rf /opt/drupal/web/robots.txt
 RUN mv /opt/drupal/web/core/install.php /opt/drupal/web/core/install.disable
 
 WORKDIR /opt/drupal
-
-# ENV DRUPAL_VERSION="drupal:10.3.2-php8.3" PHP_VERSION="8.3" 
 
 
