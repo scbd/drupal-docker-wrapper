@@ -33,6 +33,7 @@ RUN \
     composer require 'drupal/menu_admin_per_menu:1.6' --with-all-dependencies  && \
     composer require 'drupal/ckeditor5_fullscreen:1.0.0-beta10' --with-all-dependencies  && \
     composer require 'drupal/menu_link_attributes:1.5' --with-all-dependencies && \
+    composer require 'drupal/quick_node_clone:1.19'  --with-all-dependencies  && \
     composer require 'drupal/jsonapi_extras:3.26' --with-all-dependencies
 #d10
 #drupal/drush_language critical
@@ -42,7 +43,6 @@ RUN \
     composer require 'drupal/editor_paste_plain:1.0.0-beta1' --with-all-dependencies  && \
     composer require 'drupal/fpa:4.0.0' --with-all-dependencies  && \
     composer require 'drupal/administerusersbyrole:3.4' --with-all-dependencies  && \
-    composer require 'drupal/quick_node_clone:1.18'  --with-all-dependencies  && \
     composer require 'drupal/drush_language:1.0-rc5' --with-all-dependencies  
 
 RUN rm -rf /opt/drupal/web/modules/contrib/login_destination
