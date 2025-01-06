@@ -1,5 +1,5 @@
 
-FROM drupal:10.3.8-php8.3
+FROM drupal:10.4.0-php8.3
 
 WORKDIR /opt/drupal
 
@@ -11,7 +11,8 @@ RUN  \
 #d11
 RUN \
     --mount=type=cache,target=/var/cache/apt \
-    composer require 'drupal/auditfiles:4.2.0' --with-all-dependencies  && \
+    composer require 'drupal/administerusersbyrole:3.5' --with-all-dependencies  && \
+    composer require 'drupal/auditfiles:4.2.1' --with-all-dependencies  && \
     composer require 'drush/drush:13.0.1.0'  --with-all-dependencies  && \
     composer require 'drupal/admin_toolbar:3.5.1' --with-all-dependencies  && \
     composer require 'drupal/ckeditor_bs_grid:2.0.12' --with-all-dependencies  && \
@@ -22,7 +23,7 @@ RUN \
     composer require 'drupal/key_auth:2.2.0' --with-all-dependencies  && \
     composer require 'drupal/pathauto:1.13' --with-all-dependencies  && \
     composer require 'drupal/token:1.15' --with-all-dependencies  && \
-    composer require 'drupal/externalauth:2.0.6' --with-all-dependencies  && \
+    composer require 'drupal/externalauth:2.0.7' --with-all-dependencies  && \
     composer require 'drupal/redirect: 1.10' --with-all-dependencies  && \
     composer require 'drupal/samlauth:3.10' --with-all-dependencies  && \
     composer require 'drupal/mailsystem:4.5' --with-all-dependencies  && \
@@ -35,15 +36,13 @@ RUN \
     composer require 'drupal/menu_link_attributes:1.5' --with-all-dependencies && \
     composer require 'drupal/quick_node_clone:1.19'  --with-all-dependencies  && \
     composer require 'drupal/devel_entity_updates:4.2.0'  --with-all-dependencies  && \
-    composer require 'drupal/jsonapi_extras:3.26' --with-all-dependencies
+    composer require 'drupal/jsonapi_extras:3.26' --with-all-dependencies && \
+    composer require 'drupal/fpa:4.0.1' --with-all-dependencies
 #d10
 #drupal/drush_language critical
-#drupal/administerusersbyrole critical
 RUN \
     --mount=type=cache,target=/var/cache/apt \
     composer require 'drupal/editor_paste_plain:1.0.0-beta1' --with-all-dependencies  && \
-    composer require 'drupal/fpa:4.0.0' --with-all-dependencies  && \
-    composer require 'drupal/administerusersbyrole:3.4' --with-all-dependencies  && \
     composer require 'drupal/drush_language:1.0-rc5' --with-all-dependencies  
 
 RUN rm -rf /opt/drupal/web/modules/contrib/login_destination
