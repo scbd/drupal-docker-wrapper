@@ -1,5 +1,5 @@
 
-FROM drupal:10.4.0-php8.3
+FROM drupal:10.4.1-php8.3
 
 WORKDIR /opt/drupal
 
