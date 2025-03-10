@@ -1,5 +1,5 @@
 
-FROM drupal:10.4.1-php8.3
+FROM drupal:10.4.3-php8.3
 
 WORKDIR /opt/drupal
 
@@ -13,8 +13,8 @@ RUN \
     --mount=type=cache,target=/var/cache/apt \
     composer require 'drupal/administerusersbyrole:3.5' --with-all-dependencies  && \
     composer require 'drupal/auditfiles:4.2.1' --with-all-dependencies  && \
-    composer require 'drush/drush:13.0.1.0'  --with-all-dependencies  && \
-    composer require 'drupal/admin_toolbar:3.5.1' --with-all-dependencies  && \
+    composer require 'drush/drush:13.3.3'  --with-all-dependencies  && \
+    composer require 'drupal/admin_toolbar:3.5.3' --with-all-dependencies  && \
     composer require 'drupal/ckeditor_bs_grid:2.0.12' --with-all-dependencies  && \
     composer require 'drupal/ckeditor5_template:1.0.8' --with-all-dependencies  && \
     composer require 'drupal/decoupled_router:2.0.5' --with-all-dependencies  && \
@@ -24,18 +24,18 @@ RUN \
     composer require 'drupal/pathauto:1.13' --with-all-dependencies  && \
     composer require 'drupal/token:1.15' --with-all-dependencies  && \
     composer require 'drupal/externalauth:2.0.7' --with-all-dependencies  && \
-    composer require 'drupal/redirect: 1.10' --with-all-dependencies  && \
-    composer require 'drupal/samlauth:3.10' --with-all-dependencies  && \
+    composer require 'drupal/redirect: 1.11' --with-all-dependencies  && \
+    composer require 'drupal/samlauth:3.11' --with-all-dependencies  && \
     composer require 'drupal/mailsystem:4.5' --with-all-dependencies  && \
     composer require 'drupal/robotstxt:1.6' --with-all-dependencies  && \
     composer require 'drupal/symfony_mailer:1.5.0' --with-all-dependencies  && \
-    composer require 'drupal/remove_entity_untranslatable_field_validation:1.3' --with-all-dependencies  && \
+    # composer require 'drupal/remove_entity_untranslatable_field_validation:1.3' --with-all-dependencies  && \
     composer require 'drupal/jsonapi_include:1.8' --with-all-dependencies  && \
     composer require 'drupal/menu_admin_per_menu:1.6' --with-all-dependencies  && \
     composer require 'drupal/ckeditor5_fullscreen:1.0.0-beta10' --with-all-dependencies  && \
     composer require 'drupal/menu_link_attributes:1.5' --with-all-dependencies && \
-    composer require 'drupal/quick_node_clone:1.19'  --with-all-dependencies  && \
-    composer require 'drupal/devel_entity_updates:4.2.0'  --with-all-dependencies  && \
+    composer require 'drupal/quick_node_clone:1.22'  --with-all-dependencies  && \
+    # composer require 'drupal/devel_entity_updates:4.2.0'  --with-all-dependencies  && \
     composer require 'drupal/jsonapi_extras:3.26' --with-all-dependencies && \
     composer require 'drupal/fpa:4.0.1' --with-all-dependencies
 #d10
