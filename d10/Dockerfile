@@ -1,5 +1,5 @@
 
-FROM drupal:11.2.2-php8.3
+FROM drupal:10.5.1-php8.3
 
 WORKDIR /opt/drupal
 
@@ -7,12 +7,6 @@ WORKDIR /opt/drupal
 RUN --mount=type=cache,target=/var/cache/apt \
     apt update -y && \
     apt install curl nano mariadb-client -y
-
-# composer config
-RUN composer config --json --merge extra.enable-patching true && \
-    composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "https://www.drupal.org/files/issues/2025-06-30/jsonapi_extras--2025-06-30--3452036--mr-51.patch"}' && \
-    composer config --no-plugins allow-plugins.cweagans/composer-patches true && \
-    composer config extra.drupal-scaffold.file-mapping."[web-root]/robots.txt" false 
 
 # Install Drupal modules and Drush
 RUN --mount=type=cache,target=/var/cache/apt \
@@ -38,7 +32,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     composer require 'drupal/robotstxt:1.6' --with-all-dependencies && \
     composer require 'drupal/symfony_mailer:1.6.2' --with-all-dependencies && \
     composer require 'drupal/remove_entity_untranslatable_field_validation:1.3' --with-all-dependencies && \
-    composer require 'drupal/jsonapi_include:2.0.0' --with-all-dependencies && \
+    composer require 'drupal/jsonapi_include:1.8' --with-all-dependencies && \
     composer require 'drupal/menu_admin_per_menu:1.7' --with-all-dependencies && \
     composer require 'drupal/menu_link_attributes:1.5' --with-all-dependencies && \
     composer require 'drupal/quick_node_clone:1.22' --with-all-dependencies && \
@@ -51,31 +45,19 @@ RUN --mount=type=cache,target=/var/cache/apt \
     composer require 'drupal/auto_node_translate:3.0.2' --with-all-dependencies && \
     composer require 'drupal/auto_node_translate_amazon:1.0.0-rc1' --with-all-dependencies && \
     composer require 'drupal/ant_bulk:2.0.0-rc4' --with-all-dependencies && \
-    composer require 'drupal/devel:5.4.0' --with-all-dependencies && \
-    composer require 'cweagans/composer-patches:^1.7' --no-update
-
-# ADD https://www.drupal.org/files/issues/2025-06-30/jsonapi_extras--2025-06-30--3452036--mr-51.patch /opt/drupal/jsonapi_extras.patch
-# RUN composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "jsonapi_extras.patch"}'
-
-
-
-# Drupal 11 note
+    composer require 'drupal/devel:5.4.0' --with-all-dependencies
+# Drupal 10 note
 # drupal/drush_language critical
 # RUN --mount=type=cache,target=/var/cache/apt \
 #     composer require 'drupal/drush_language:1.0-rc5' --with-all-dependencies
 
 # Clean up unwanted modules and files
-
-# RUN --mount=type=cache,target=/var/cache/apt \
-#     composer require 'cweagans/composer-patches:^1.7' --no-update
-
 RUN rm -rf /opt/drupal/web/modules/contrib/login_destination && \
     rm -rf /opt/drupal/web/modules/contrib/ckeditor_templates && \
     rm -rf /opt/drupal/web/modules/contrib/ckeditor_templates_ui && \
     rm -rf /opt/drupal/web/modules/contrib/ctools && \
     rm -rf /opt/drupal/web/robots.txt && \
-    mv /opt/drupal/web/core/install.php /opt/drupal/web/core/install.disable && \
-    rm composer.lock && \
-    composer install
+    mv /opt/drupal/web/core/install.php /opt/drupal/web/core/install.disable
 
 WORKDIR /opt/drupal
+
