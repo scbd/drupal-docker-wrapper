@@ -1,0 +1,16 @@
+{
+  "name": "drupal-docker-wrapper",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules",
+    "lint:md:fix": "markdownlint '**/*.md' --ignore node_modules --fix",
+    "lint:docker": "hadolint Dockerfile d10/Dockerfile || (echo 'Hadolint issues' && exit 1)",
+    "lint": "npm run lint:md && npm run lint:docker",
+    "lint:fix": "npm run lint:md:fix"
+  },
+  "devDependencies": {
+    "markdownlint": "^0.33.0",
+    "markdownlint-cli": "^0.41.0"
+  }
+}

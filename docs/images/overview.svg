@@ -1,0 +1,26 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='620' height='220' viewBox='0 0 620 220' role='img' aria-labelledby='title desc'>
+<title id='title'>Drupal Docker Wrapper Overview</title>
+<desc id='desc'>Simplified architecture: Base Drupal Images, Custom Modules, CI Pipeline, and Deployment target.</desc>
+<style>
+  .box { fill:#0b6fa4; stroke:#034463; stroke-width:2; rx:6; ry:6; }
+  .text { font:14px system-ui, Arial, sans-serif; fill:#fff; }
+  .arrow { stroke:#444; stroke-width:2; marker-end:url(#arrowhead); }
+</style>
+<defs>
+  <marker id='arrowhead' markerWidth='10' markerHeight='7' refX='10' refY='3.5' orient='auto'>
+    <polygon points='0 0, 10 3.5, 0 7' fill='#444'/>
+  </marker>
+</defs>
+<rect class='box' x='20' y='60' width='160' height='100'/>
+<text class='text' x='100' y='110' text-anchor='middle'>Drupal 11 Base\nImage</text>
+<rect class='box' x='220' y='60' width='160' height='100' fill='#0a5d89'/>
+<text class='text' x='300' y='110' text-anchor='middle'>Drupal 10 Base\nImage</text>
+<rect class='box' x='420' y='20' width='180' height='80' fill='#1d8237'/>
+<text class='text' x='510' y='60' text-anchor='middle'>CI Build &\nSmoke Tests</text>
+<rect class='box' x='420' y='130' width='180' height='70' fill='#8a4f0f'/>
+<text class='text' x='510' y='165' text-anchor='middle'>Docker Hub /\nRegistry</text>
+<line class='arrow' x1='180' y1='110' x2='220' y2='110'/>
+<line class='arrow' x1='380' y1='110' x2='420' y2='60'/>
+<line class='arrow' x1='380' y1='110' x2='420' y2='165'/>
+<line class='arrow' x1='510' y1='100' x2='510' y2='130'/>
+</svg>

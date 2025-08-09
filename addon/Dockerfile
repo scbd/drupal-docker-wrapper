@@ -1,33 +1,10 @@
-###############################################
-# Base Stage: Core + system tools + composer config
-###############################################
-FROM drupal:11.2.3-php8.3 AS base-core
+## Addon layer: adds pinned contrib modules + Drush on top of base-core
+## Expects a previously built base image tagged as scbd/drupal-docker-wrapper-base:latest
+FROM scbd/drupal-docker-wrapper-base:latest AS with-modules
+## (Alternatively build locally using: docker build -t scbd/drupal-docker-wrapper-base:latest base)
 
 WORKDIR /opt/drupal
 
-# System packages (keep minimal) - cache apt metadata
-# hadolint ignore=DL3008
-RUN --mount=type=cache,target=/var/cache/apt \
-    set -eux; \
-    apt-get update -y; \
-    apt-get install --no-install-recommends -y curl nano mariadb-client; \
-    rm -rf /var/lib/apt/lists/*
-
-# Composer configuration (patching + scaffold tweak)
-RUN set -eux; \
-    composer config --json --merge extra.enable-patching true; \
-    composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "https://www.drupal.org/files/issues/2025-06-30/jsonapi_extras--2025-06-30--3452036--mr-51.patch"}'; \
-    composer config --no-plugins allow-plugins.cweagans/composer-patches true; \
-    composer config extra.drupal-scaffold.file-mapping."[web-root]/robots.txt".mode skip
-
-###############################################
-# Modules Stage: explicit contrib & tooling versions
-###############################################
-FROM base-core AS with-modules
-WORKDIR /opt/drupal
-
-# Explicit module versions kept visible here for auditability.
-# We keep composer.lock produced by these operations for deterministic rebuilds.
 RUN --mount=type=cache,target=/root/.composer/cache \
     set -eux; \
     composer require 'drush/drush:13.6.0' --with-all-dependencies --no-interaction --no-progress; \
@@ -69,42 +46,26 @@ RUN --mount=type=cache,target=/root/.composer/cache \
     composer require 'drupal/auto_node_translate_amazon:1.0.0-rc1' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/ant_bulk:2.0.0-rc4' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/fontawesome:3.0.0' --with-all-dependencies --no-interaction --no-progress; \
-    # Generate a manifest of installed packages (core + contrib) for auditing
-    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt
-
-# Remove deprecated/unwanted modules & adjust installation script
-RUN set -eux; \
-    rm -rf web/modules/contrib/login_destination \ 
-           web/modules/contrib/ckeditor_templates \ 
-           web/modules/contrib/ckeditor_templates_ui \ 
-           web/modules/contrib/ctools \ 
-           web/robots.txt; \
-    if [ -f web/core/install.php ]; then mv web/core/install.php web/core/install.disable; fi
-
-# Tighten permissions (keep writable files dir configurable later)
-RUN set -eux; \
+    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt; \
+    rm -rf web/modules/contrib/login_destination \
+        web/modules/contrib/ckeditor_templates \
+        web/modules/contrib/ckeditor_templates_ui \
+        web/modules/contrib/ctools \
+        web/robots.txt; \
+    if [ -f web/core/install.php ]; then mv web/core/install.php web/core/install.disable; fi; \
     find web -type d -exec chmod 755 {} \;; \
     find web -type f -exec chmod 644 {} \;; \
-    chmod -R 775 web/sites/default/files || true
+    chmod -R 775 web/sites/default/files || true; \
+    chown -R www-data:www-data /opt/drupal
 
-###############################################
-# Final Stage
-###############################################
-FROM with-modules AS final
-WORKDIR /opt/drupal
-
-# Expose manifest for quick inspection
-LABEL org.opencontainers.image.title="Drupal 11 Base with Contrib Modules" \
+LABEL org.opencontainers.image.title="Drupal 11 Addon Modules (Non-Root)" \
       org.opencontainers.image.source="https://github.com/scbd/drupal-docker-wrapper" \
-      org.opencontainers.image.description="Drupal 11 image with pinned contrib module versions and patching enabled" \
+      org.opencontainers.image.description="Addon layer with pinned contrib modules and Drush" \
       org.opencontainers.image.licenses="GPL-2.0-or-later"
 
-# (Optional) HEALTHCHECK - simple HTTP check (can be overridden)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 CMD curl -fsS http://localhost/healthz || curl -fsS http://localhost/ || exit 1
 
-# Default working directory
 WORKDIR /opt/drupal
 
-# Ensure ownership & drop privileges
-RUN set -eux; chown -R www-data:www-data /opt/drupal
+# Drop privileges for runtime
 USER www-data

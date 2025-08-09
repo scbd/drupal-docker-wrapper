@@ -1,0 +1,191 @@
+version: 2.1
+
+orbs:
+  docker: circleci/docker@2.5.0
+
+executors:
+  docker-default:
+    docker:
+      - image: cimg/base:stable
+    resource_class: medium
+  node-lint:
+    docker:
+      - image: cimg/node:20.14
+    resource_class: small
+
+commands:
+  docker_auth:
+    description: "Login to Docker Hub if creds exist"
+    steps:
+      - run:
+          name: Docker login (if env vars present)
+          command: |
+            if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+              echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            else
+              echo "Docker Hub credentials not set; skipping login.";
+            fi
+
+jobs:
+  lint:
+    executor: node-lint
+    steps:
+      - checkout
+      - run:
+          name: Run lint script
+          command: |
+            chmod +x ci/lint.sh
+            ci/lint.sh
+  build_base_addon_11:
+    executor: docker-default
+    environment:
+      BASE_IMAGE_NAME: scbd/drupal-docker-wrapper-base
+      ADDON_IMAGE_NAME: scbd/drupal-docker-wrapper-addon
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build Drupal 11 base image (amd64)
+          command: |
+            TAG="${CIRCLE_SHA1:0:12}"
+            docker build --platform linux/amd64 -t "$BASE_IMAGE_NAME:11-ci-$TAG" base
+            # Tag a predictable name for addon build FROM reference
+            docker tag "$BASE_IMAGE_NAME:11-ci-$TAG" "$BASE_IMAGE_NAME:latest"
+      - run:
+          name: Build Drupal 11 addon image (amd64)
+          command: |
+            TAG="${CIRCLE_SHA1:0:12}"
+            docker build --platform linux/amd64 -t "$ADDON_IMAGE_NAME:11-ci-$TAG" addon
+      - run:
+          name: Smoke test addon image
+          command: |
+            chmod +x ci/smoke-test.sh || true
+            TAG="$ADDON_IMAGE_NAME:11-ci-${CIRCLE_SHA1:0:12}"
+            bash ci/smoke-test.sh "$TAG"
+      - persist_to_workspace:
+          root: .
+          paths:
+            - base/Dockerfile
+            - addon/Dockerfile
+  build_test_11:
+    executor: docker-default
+    environment:
+      IMAGE_NAME: scbd/drupal-docker-wrapper
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build Drupal 11 image
+          command: |
+            TAG="${CIRCLE_SHA1:0:12}"
+            docker build -t "$IMAGE_NAME:11-ci-$TAG" .
+      - run:
+          name: Smoke test Drupal 11 image
+          command: |
+            chmod +x ci/smoke-test.sh || true
+            TAG="$IMAGE_NAME:11-ci-${CIRCLE_SHA1:0:12}"
+            bash ci/smoke-test.sh "$TAG"
+      - persist_to_workspace:
+          root: .
+          paths:
+            - Dockerfile
+
+  build_test_10:
+    executor: docker-default
+    environment:
+      IMAGE_NAME: scbd/drupal-docker-wrapper
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build Drupal 10 image
+          command: |
+            TAG="${CIRCLE_SHA1:0:12}"
+            docker build -f d10/Dockerfile -t "$IMAGE_NAME:10-ci-$TAG" .
+      - run:
+          name: Smoke test Drupal 10 image
+          command: |
+            chmod +x ci/smoke-test.sh || true
+            TAG="$IMAGE_NAME:10-ci-${CIRCLE_SHA1:0:12}"
+            bash ci/smoke-test.sh "$TAG"
+      - persist_to_workspace:
+          root: .
+          paths:
+            - d10/Dockerfile
+
+  push_images:
+    executor: docker-default
+    environment:
+      IMAGE_NAME: scbd/drupal-docker-wrapper
+    steps:
+      - checkout
+      - setup_remote_docker
+      - docker_auth
+      - run:
+          name: Derive tag & build release images
+          command: |
+            if [ -z "$CIRCLE_TAG" ]; then
+              echo "Not a tag build; skipping push."; exit 0; fi
+            # Expect tags like 11.2.3-v1 or 10.5.1-v1
+            VERSION="$CIRCLE_TAG"
+            MAJOR_PREFIX=${VERSION%%.*} # 11 or 10
+            echo "Building release images for $VERSION (major $MAJOR_PREFIX)"
+            if [[ $MAJOR_PREFIX == 11* ]]; then
+              docker build --platform linux/amd64 -t "$IMAGE_NAME:$VERSION" .
+              docker tag "$IMAGE_NAME:$VERSION" "$IMAGE_NAME:latest-11"
+              # Build and tag split base/addon images too (only for 11 major)
+              docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper-base:$VERSION base
+              docker tag scbd/drupal-docker-wrapper-base:$VERSION scbd/drupal-docker-wrapper-base:latest-11
+              docker tag scbd/drupal-docker-wrapper-base:$VERSION scbd/drupal-docker-wrapper-base:latest
+              docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper-addon:$VERSION addon
+              docker tag scbd/drupal-docker-wrapper-addon:$VERSION scbd/drupal-docker-wrapper-addon:latest-11
+              docker tag scbd/drupal-docker-wrapper-addon:$VERSION scbd/drupal-docker-wrapper-addon:latest
+            elif [[ $MAJOR_PREFIX == 10* ]]; then
+              docker build -f d10/Dockerfile -t "$IMAGE_NAME:$VERSION" .
+              docker tag "$IMAGE_NAME:$VERSION" "$IMAGE_NAME:latest-10"
+            else
+              echo "Unknown major prefix: $MAJOR_PREFIX"; exit 1;
+            fi
+      - run:
+          name: Push images (if tag build)
+          command: |
+            if [ -z "$CIRCLE_TAG" ]; then
+              echo "Skipping push (not a tag build)."; exit 0; fi
+            docker images | grep scbd || true
+            if [[ ${CIRCLE_TAG%%.*} == 11* ]]; then
+              docker push "$IMAGE_NAME:$CIRCLE_TAG"
+              docker push "$IMAGE_NAME:latest-11"
+              docker push scbd/drupal-docker-wrapper-base:$CIRCLE_TAG
+              docker push scbd/drupal-docker-wrapper-base:latest-11
+              docker push scbd/drupal-docker-wrapper-base:latest
+              docker push scbd/drupal-docker-wrapper-addon:$CIRCLE_TAG
+              docker push scbd/drupal-docker-wrapper-addon:latest-11
+              docker push scbd/drupal-docker-wrapper-addon:latest
+            elif [[ ${CIRCLE_TAG%%.*} == 10* ]]; then
+              docker push "$IMAGE_NAME:$CIRCLE_TAG"
+              docker push "$IMAGE_NAME:latest-10"
+            fi
+
+workflows:
+  build-test-and-push:
+    jobs:
+      - lint
+      - build_base_addon_11:
+          requires:
+            - lint
+      - build_test_11:
+          requires:
+            - lint
+      - build_test_10:
+          requires:
+            - lint
+      # Push disabled for now; uncomment to re-enable release pushes on tags.
+      # - push_images:
+      #     requires:
+      #       - build_test_11
+      #       - build_test_10
+      #     filters:
+      #       branches:
+      #         ignore: /.*/
+      #       tags:
+      #         only: /.*/

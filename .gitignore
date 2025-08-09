@@ -26,3 +26,4 @@ logs
 efs
 server/efs
 .opt
+.vscode

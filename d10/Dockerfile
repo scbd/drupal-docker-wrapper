@@ -1,12 +1,13 @@
-
 FROM drupal:10.5.1-php8.3
 
 WORKDIR /opt/drupal
 
-# Install system packages
+# Install system packages (use apt-get and clean up lists for smaller image)
+# hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt \
-    apt update -y && \
-    apt install curl nano mariadb-client -y
+    apt-get update -y && \
+    apt-get install --no-install-recommends -y curl nano mariadb-client && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Drupal modules and Drush
 RUN --mount=type=cache,target=/var/cache/apt \
