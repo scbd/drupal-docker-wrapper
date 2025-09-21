@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.2.3-php8.3 AS base-core
+FROM drupal:11.2.4-php8.3 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -13,10 +13,13 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get install --no-install-recommends -y curl nano mariadb-client; \
     rm -rf /var/lib/apt/lists/*
 
+# Copy local patches into the image so composer-patches can use them
+COPY patches/ /opt/drupal/patches/
+
 # Composer configuration (patching + scaffold tweak)
 RUN set -eux; \
     composer config --json --merge extra.enable-patching true; \
-    composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "https://www.drupal.org/files/issues/2025-06-30/jsonapi_extras--2025-06-30--3452036--mr-51.patch"}'; \
+    composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "patches/jsonapi_extras--2025-06-30--3452036--mr-51.patch"}'; \
     composer config --no-plugins allow-plugins.cweagans/composer-patches true; \
     composer config extra.drupal-scaffold.file-mapping."[web-root]/robots.txt".mode skip
 
@@ -30,22 +33,22 @@ WORKDIR /opt/drupal
 # We keep composer.lock produced by these operations for deterministic rebuilds.
 RUN --mount=type=cache,target=/root/.composer/cache \
     set -eux; \
-    composer require 'drush/drush:13.6.0' --with-all-dependencies --no-interaction --no-progress; \
+    composer require 'drush/drush:13.6.2' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/administerusersbyrole:3.5.0' --with-all-dependencies --no-interaction --no-progress; \
-    composer require 'drupal/auditfiles:4.2.1' --with-all-dependencies --no-interaction --no-progress; \
+    composer require 'drupal/auditfiles:4.2.4' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/admin_toolbar:3.6.2' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/ckeditor_bs_grid:2.0.12' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/ckeditor5_template:1.0.8' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/ckeditor5_fullscreen:1.0' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/editor_paste_plain:1.0.0-rc1' --with-all-dependencies --no-interaction --no-progress; \
-    composer require 'drupal/decoupled_router:2.0.5' --with-all-dependencies --no-interaction --no-progress; \
+    composer require 'drupal/decoupled_router:2.0.6' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/forum:1.0.2' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/jsonapi_site:1.0.2' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/key_auth:2.2.0' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/pathauto:1.13' --with-all-dependencies --no-interaction --no-progress; \
-    composer require 'drupal/token:1.15' --with-all-dependencies --no-interaction --no-progress; \
+    composer require 'drupal/token:1.16' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/externalauth:2.0.8' --with-all-dependencies --no-interaction --no-progress; \
-    composer require 'drupal/redirect:1.11' --with-all-dependencies --no-interaction --no-progress; \
+    composer require 'drupal/redirect:1.12' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/samlauth:3.11' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/mailsystem:4.5' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/robotstxt:1.6' --with-all-dependencies --no-interaction --no-progress; \
@@ -58,7 +61,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
     composer require 'drupal/jsonapi_extras:3.26' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/fpa:4.0.1' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/search_api:1.38' --with-all-dependencies --no-interaction --no-progress; \
-    composer require 'drupal/facets:3.0' --with-all-dependencies --no-interaction --no-progress; \
+    composer require 'drupal/facets:3.0.1' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/jsonapi_resources:1.3' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/jsonapi_search_api:1.0-rc5' --with-all-dependencies --no-interaction --no-progress; \
     composer require 'drupal/devel:5.4.0' --with-all-dependencies --no-interaction --no-progress; \
