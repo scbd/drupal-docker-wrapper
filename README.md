@@ -53,7 +53,7 @@ Replace `VERSION_TAG` (e.g. `11.2.3-v1`).
 
 ```sh
 # Build
-docker build -t scbd/drupal-docker-wrapper:VERSION_TAG .
+docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:VERSION_TAG .
 
 # Run (ephemeral code, persistent files)
 docker run -d --name drupal -p 8080:80 \
@@ -68,7 +68,7 @@ docker exec drupal head -50 /opt/drupal/modules-versions.txt
 ### Drupal 10 variant
 
 ```sh
-docker build -f d10/Dockerfile -t scbd/drupal-docker-wrapper:10-VERSION_TAG .
+docker build --platform linux/amd64  -f d10/Dockerfile -t scbd/drupal-docker-wrapper:10-VERSION_TAG .
 ```
 
 ### Drush site install example
@@ -160,6 +160,9 @@ docker build -t drupal-addon:11.2.3-mods .
 ```
 
 Push your base image (e.g. `scbd/drupal-docker-wrapper-base:11.2.3`) first, then the addon image that depends on it.
+
+### Build and push in one step (local)
+docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:latest -t scbd/drupal-docker-wrapper:11.2.4 . --push
 
 ## License
 
