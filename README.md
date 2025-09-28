@@ -137,6 +137,14 @@ Add an automated scheduled rebuild (weekly) to pick up upstream security patches
 | Composer patch not applied | Patch URL changed or network issue | Mirror patch; verify URL; rebuild |
 | High CVE count in scan | Outdated base image packages | Rebuild with newer base tag; maybe dist-upgrade |
 | Drush missing | Stage caching issue | Clear build cache (`--no-cache`) and rebuild |
+| Composer cannot create `/var/www/.composer/...` | Composer cache not writable | Set writable composer home. |
+
+Note: If you override the container USER or execute composer in a derived image, make sure to:
+
+```sh
+mkdir -p /var/www/.composer/cache
+chown -R www-data:www-data /var/www/.composer
+```
 
 ## Directory variants (split build)
 
