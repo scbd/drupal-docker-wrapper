@@ -40,8 +40,7 @@ required.
 Recommended persistent mounts:
 
 ```sh
--v drupal-public:/opt/drupal/web/sites/default/files \
--v drupal-private:/opt/drupal/private
+-v drupal-sites:/opt/drupal/web/sites \
 ```
 
 Avoid mounting `vendor/`, `web/modules/contrib/`, or the project root unless you are in an iterative local dev workflow
@@ -120,12 +119,28 @@ In that case, run `composer install` locally (not inside production container) s
 
 ## CI/CD (CircleCI)
 
-The provided pipeline can build, lint & smoke-test images; configure Docker Hub credentials to push:
+The provided pipeline builds, lints, and smoke-tests both Drupal 11 and Drupal 10 images.
+
+### Testing Locally
+
+Before pushing changes, test the full CI pipeline locally:
+
+```sh
+./ci/test-ci-locally.sh
+```
+
+This simulates the CircleCI workflow without pushing to Docker Hub.
+
+### Production Deployment
+
+Configure Docker Hub credentials to enable automated pushes on tagged releases:
 
 Env vars:
 
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
+
+Uncomment the `push_images` job in `.circleci/config.yml` to enable tag-based releases.
 
 Add an automated scheduled rebuild (weekly) to pick up upstream security patches.
 
@@ -146,12 +161,14 @@ mkdir -p /var/www/.composer/cache
 chown -R www-data:www-data /var/www/.composer
 ```
 
-## Directory variants (split build)
+## Directory variants (alternative split build - optional)
 
-If you prefer physical separation instead of a multi-stage single Dockerfile you can use:
+If you prefer physical separation instead of a multi-stage single Dockerfile, the repository includes:
 
 - `base/Dockerfile`: core + system tools + composer config.
 - `addon/Dockerfile`: starts FROM the published base image (or a locally built tag) and adds pinned modules.
+
+**Note:** These are not used in the main CI pipeline but are available for alternative build strategies.
 
 ### Build base then addon locally
 
@@ -167,7 +184,8 @@ cd addon
 docker build -t drupal-addon:11.2.3-mods .
 ```
 
-Push your base image (e.g. `scbd/drupal-docker-wrapper-base:11.2.3`) first, then the addon image that depends on it.
+If using this approach in production, push your base image (e.g.
+`scbd/drupal-docker-wrapper-base:11.2.3`) first, then the addon image that depends on it.
 
 ### Build and push in one step (local)
 

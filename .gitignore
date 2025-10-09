@@ -27,3 +27,4 @@ efs
 server/efs
 .opt
 .vscode
+.github/

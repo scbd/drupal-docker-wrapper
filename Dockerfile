@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.2.4-php8.3 AS base-core
+FROM drupal:11.2.5-php8.3 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -59,14 +59,14 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/forum:1.0.2' \
       'drupal/jsonapi_site:1.0.2' \
       'drupal/key_auth:2.2.0' \
-      'drupal/pathauto:1.13' \
+      'drupal/pathauto:1.14' \
       'drupal/token:1.16' \
       'drupal/externalauth:2.0.8' \
       'drupal/redirect:1.12' \
       'drupal/samlauth:3.11' \
       'drupal/mailsystem:4.5' \
       'drupal/robotstxt:1.6' \
-      'drupal/symfony_mailer:^1.6' \
+      'drupal/symfony_mailer:1.6' \
       'drupal/remove_entity_untranslatable_field_validation:1.3' \
       'drupal/jsonapi_include:2.0.0' \
       'drupal/menu_admin_per_menu:1.7' \
@@ -80,7 +80,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/devel:5.4.0' \
       'drupal/ckeditor5_icons:1.2.1' \
-      'drupal/auto_node_translate_deepl:1.0.0-rc2' \
+      'drupal/auto_node_translate_deepl:1.0.0' \
       'drupal/auto_node_translate:3.0.2' \
       'drupal/auto_node_translate_amazon:1.0.0-rc1' \
       'drupal/ant_bulk:2.0.0-rc4' \
