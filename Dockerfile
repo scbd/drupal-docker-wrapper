@@ -72,10 +72,10 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/menu_admin_per_menu:1.7' \
       'drupal/menu_link_attributes:1.5' \
       'drupal/quick_node_clone:1.22' \
-      'drupal/jsonapi_extras:3.26' \
+      'drupal/jsonapi_extras:3.27' \
       'drupal/fpa:4.0.1' \
       'drupal/search_api:1.39' \
-      'drupal/facets:3.0.1' \
+      'drupal/facets:3.0.2' \
       'drupal/jsonapi_resources:1.3' \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/devel:5.4.0' \
