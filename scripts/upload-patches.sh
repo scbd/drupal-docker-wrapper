@@ -1,1 +1,0 @@
-scp -r  ../patches/* ubuntu@staging.infra.cbd.int:/home/ubuntu/dmsm/dev/dev/patches/
