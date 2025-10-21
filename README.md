@@ -160,32 +160,6 @@ mkdir -p /var/www/.composer/cache
 chown -R www-data:www-data /var/www/.composer
 ```
 
-## Directory variants (alternative split build - optional)
-
-If you prefer physical separation instead of a multi-stage single Dockerfile, the repository includes:
-
-- `base/Dockerfile`: core + system tools + composer config.
-- `addon/Dockerfile`: starts FROM the published base image (or a locally built tag) and adds pinned modules.
-
-**Note:** These are not used in the main CI pipeline but are available for alternative build strategies.
-
-### Build base then addon locally
-
-```sh
-# Build base
-cd base
-docker build -t drupal-base:11.2.3 .
-cd ..
-
-# Build addon (uses the locally tagged base)
-sed -i '' "s|scbd/drupal-docker-wrapper-base:latest|drupal-base:11.2.3|" addon/Dockerfile
-cd addon
-docker build -t drupal-addon:11.2.3-mods .
-```
-
-If using this approach in production, push your base image (e.g.
-`scbd/drupal-docker-wrapper-base:11.2.3`) first, then the addon image that depends on it.
-
 ### Build and push in one step (local)
 
 docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:latest -t scbd/drupal-docker-wrapper:11.2.4 . --push
