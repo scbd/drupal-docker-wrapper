@@ -56,8 +56,7 @@ docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:VERSION_TAG .
 
 # Run (ephemeral code, persistent files)
 docker run -d --name drupal -p 8080:80 \
-  -v drupal-public:/opt/drupal/web/sites/default/files \
-  -v drupal-private:/opt/drupal/private \
+  -v drupal-sites:/opt/drupal/web/sites \
   scbd/drupal-docker-wrapper:VERSION_TAG
 
 # Inspect installed (direct) dependency versions
@@ -111,7 +110,7 @@ If you prefer live-editing code & modules locally:
 ```sh
 docker run -d --name drupal-dev -p 8080:80 \
   -v "$(pwd)/web:/opt/drupal/web" \
-  -v drupal-public:/opt/drupal/web/sites/default/files \
+  -v drupal-sites:/opt/drupal/web/sites \
   scbd/drupal-docker-wrapper:VERSION_TAG
 ```
 
