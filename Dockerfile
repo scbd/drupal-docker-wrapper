@@ -104,7 +104,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
 RUN set -eux; \
     rm -rf \
       web/modules/contrib/login_destination \
-      web/modules/contrib/ckeditor_templates \
+    #   web/modules/contrib/ckeditor_templates \
       web/modules/contrib/ckeditor_templates_ui \
             web/modules/contrib/ctools \
             web/robots.txt;
