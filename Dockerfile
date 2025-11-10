@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.2.5-php8.3 AS base-core
+FROM drupal:11.2.7-php8.3 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -48,7 +48,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
     set -eux; \
     composer require \
       'drush/drush:13.6.2' \
-      'drupal/administerusersbyrole:3.5.0' \
+      'drupal/administerusersbyrole:3.6.0' \
       'drupal/auditfiles:4.2.4' \
       'drupal/admin_toolbar:3.6.2' \
       'drupal/ckeditor_bs_grid:2.0.12' \
@@ -69,12 +69,13 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/symfony_mailer:1.6' \
       'drupal/remove_entity_untranslatable_field_validation:1.3' \
       'drupal/jsonapi_include:2.0.0' \
+      'drupal/js_cookie:1.0.2' \
       'drupal/menu_admin_per_menu:1.7' \
       'drupal/menu_link_attributes:1.5' \
       'drupal/quick_node_clone:1.22' \
       'drupal/jsonapi_extras:3.27' \
       'drupal/fpa:4.0.1' \
-      'drupal/search_api:1.39' \
+      'drupal/search_api:1.40' \
       'drupal/facets:3.0.2' \
       'drupal/jsonapi_resources:1.3' \
       'drupal/jsonapi_search_api:1.0-rc5' \
