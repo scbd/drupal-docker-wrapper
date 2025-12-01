@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.2.7-php8.3 AS base-core
+FROM drupal:11.2.8-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -20,7 +20,7 @@ COPY ./patches/ /opt/drupal/patches/
 RUN set -eux; \
     composer config preferred-install dist; \
     composer config --json --merge extra.enable-patching true; \
-    composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "patches/jsonapi_extras--2025-06-30--3452036--mr-51.patch"}'; \
+    # composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "patches/jsonapi_extras--2025-06-30--3452036--mr-51.patch"}'; \
     composer config --no-plugins allow-plugins.cweagans/composer-patches true; \
     composer config extra.drupal-scaffold.file-mapping."[web-root]/robots.txt".mode skip
 
@@ -101,21 +101,6 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/*
 
-# Remove deprecated/unwanted modules & adjust installation script
-RUN set -eux; \
-    rm -rf \
-      web/modules/contrib/login_destination \
-    #   web/modules/contrib/ckeditor_templates \
-      web/modules/contrib/ckeditor_templates_ui \
-            web/modules/contrib/ctools \
-            web/robots.txt;
-
-# Tighten permissions (keep writable files dir configurable later)
-RUN set -eux; \
-    find web -type d -exec chmod 755 {} +; \
-    find web -type f -exec chmod 644 {} +; \
-    chmod -R 775 web/sites/default/files 2>/dev/null || true
-
 ###############################################
 # Final Stage
 ###############################################
@@ -134,9 +119,9 @@ RUN set -eux; \
     ln -s /opt/drupal/web /var/www/html; \
     chown -R www-data:www-data /opt/drupal
 
-# Copy entrypoint patch-applier and set as entrypoint wrapper
-COPY --chown=www-data:www-data ./scripts/entrypoint-apply-patches.sh /usr/local/bin/entrypoint-apply-patches.sh
-RUN chmod +x /usr/local/bin/entrypoint-apply-patches.sh
+# Copy entrypoint wrapper and its helper scripts
+COPY --chown=www-data:www-data ./scripts/*.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Ensure Composer home/cache is writable for www-data
 ENV COMPOSER_HOME=/var/www/.composer \
@@ -149,7 +134,7 @@ RUN set -eux; \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD curl -fsS http://localhost/healthz || curl -fsS http://localhost/ || exit 1
 
-ENTRYPOINT ["/usr/local/bin/entrypoint-apply-patches.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["apache2-foreground"]
 
 USER www-data
