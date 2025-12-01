@@ -29,3 +29,4 @@ server/efs
 .vscode
 .github/prompts*
 .github/instructions*
+!.github/instructions/workflow.md
