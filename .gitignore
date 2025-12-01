@@ -27,4 +27,5 @@ efs
 server/efs
 .opt
 .vscode
-.github/
+.github/prompts*
+.github/instructions*

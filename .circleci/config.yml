@@ -60,28 +60,6 @@ jobs:
           paths:
             - Dockerfile
 
-  build_test_10:
-    executor: docker-default
-    environment:
-      IMAGE_NAME: scbd/drupal-docker-wrapper
-    steps:
-      - checkout
-      - setup_remote_docker
-      - run:
-          name: Build Drupal 10 image
-          command: |
-            TAG="${CIRCLE_SHA1:0:12}"
-            docker build -f d10/Dockerfile -t "$IMAGE_NAME:10-ci-$TAG" .
-      - run:
-          name: Smoke test Drupal 10 image
-          command: |
-            chmod +x ci/smoke-test.sh || true
-            TAG="$IMAGE_NAME:10-ci-${CIRCLE_SHA1:0:12}"
-            bash ci/smoke-test.sh "$TAG"
-      - persist_to_workspace:
-          root: .
-          paths:
-            - d10/Dockerfile
 
   push_images:
     executor: docker-default
@@ -96,18 +74,15 @@ jobs:
           command: |
             if [ -z "$CIRCLE_TAG" ]; then
               echo "Not a tag build; skipping push."; exit 0; fi
-            # Expect tags like 11.2.3-v1 or 10.5.1-v1
+            # Expect tags like 11.2.3-v1 (Drupal 11 only)
             VERSION="$CIRCLE_TAG"
-            MAJOR_PREFIX=${VERSION%%.*} # 11 or 10
+            MAJOR_PREFIX=${VERSION%%.*} # 11
             echo "Building release images for $VERSION (major $MAJOR_PREFIX)"
             if [[ $MAJOR_PREFIX == 11* ]]; then
               docker build --platform linux/amd64 -t "$IMAGE_NAME:$VERSION" .
               docker tag "$IMAGE_NAME:$VERSION" "$IMAGE_NAME:latest-11"
-            elif [[ $MAJOR_PREFIX == 10* ]]; then
-              docker build -f d10/Dockerfile -t "$IMAGE_NAME:$VERSION" .
-              docker tag "$IMAGE_NAME:$VERSION" "$IMAGE_NAME:latest-10"
             else
-              echo "Unknown major prefix: $MAJOR_PREFIX"; exit 1;
+              echo "Unknown or unsupported major prefix: $MAJOR_PREFIX (expected 11.x)"; exit 1;
             fi
       - run:
           name: Push images (if tag build)
@@ -118,9 +93,8 @@ jobs:
             if [[ ${CIRCLE_TAG%%.*} == 11* ]]; then
               docker push "$IMAGE_NAME:$CIRCLE_TAG"
               docker push "$IMAGE_NAME:latest-11"
-            elif [[ ${CIRCLE_TAG%%.*} == 10* ]]; then
-              docker push "$IMAGE_NAME:$CIRCLE_TAG"
-              docker push "$IMAGE_NAME:latest-10"
+            else
+              echo "Skipping push for unsupported major prefix (expected 11.x)."; exit 0;
             fi
 
 workflows:
@@ -130,14 +104,10 @@ workflows:
       - build_test_11:
           requires:
             - lint
-      - build_test_10:
-          requires:
-            - lint
       # Push disabled for now; uncomment to re-enable release pushes on tags.
       # - push_images:
       #     requires:
       #       - build_test_11
-      #       - build_test_10
       #     filters:
       #       branches:
       #         ignore: /.*/

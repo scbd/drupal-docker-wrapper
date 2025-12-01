@@ -56,34 +56,13 @@ else
 fi
 echo
 
-echo -e "${GREEN}✓ Step 3: Build & Test Drupal 10 Image${NC}"
-TAG_10="10-ci-$SHORT_SHA"
-
-echo "  Building $IMAGE_NAME:$TAG_10 ..."
-if docker build -f d10/Dockerfile -t "$IMAGE_NAME:$TAG_10" .; then
-  echo -e "${GREEN}  ✓ Build succeeded${NC}"
-else
-  echo -e "${RED}  ✗ Build failed${NC}"
-  exit 1
-fi
-
-echo "  Running smoke test..."
-if bash ci/smoke-test.sh "$IMAGE_NAME:$TAG_10"; then
-  echo -e "${GREEN}  ✓ Smoke test passed${NC}"
-else
-  echo -e "${RED}  ✗ Smoke test failed${NC}"
-  exit 1
-fi
-echo
-
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}✓ All pipeline steps passed!${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo
 echo "Built images:"
 echo "  - $IMAGE_NAME:$TAG_11"
-echo "  - $IMAGE_NAME:$TAG_10"
 echo
 echo "To clean up these test images:"
-echo "  docker rmi $IMAGE_NAME:$TAG_11 $IMAGE_NAME:$TAG_10"
+echo "  docker rmi $IMAGE_NAME:$TAG_11"
 echo

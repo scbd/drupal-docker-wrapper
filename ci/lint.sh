@@ -41,17 +41,10 @@ npm run --silent lint:md || MD_FAIL=1
 
 echo "[lint] Dockerfile lint"
 
-# Run hadolint on each Dockerfile; capture failure without aborting entire script prematurely
+# Run hadolint on Drupal 11 Dockerfile; capture failure without aborting entire script prematurely
 if [ -f Dockerfile ]; then
   if ! run_hadolint Dockerfile; then
     echo "[lint] hadolint failed for Dockerfile" >&2
-    HD_FAIL=1
-  fi
-fi
-
-if [ -f d10/Dockerfile ]; then
-  if ! run_hadolint d10/Dockerfile; then
-    echo "[lint] hadolint failed for d10/Dockerfile" >&2
     HD_FAIL=1
   fi
 fi
