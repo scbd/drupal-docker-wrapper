@@ -11,15 +11,10 @@
     <polygon points='0 0, 10 3.5, 0 7' fill='#444'/>
   </marker>
 </defs>
-<!-- Drupal 11 Box -->
-<rect class='box' x='20' y='60' width='160' height='100'/>
-<text class='text' x='100' y='105' text-anchor='middle'>Drupal 11</text>
-<text class='text' x='100' y='125' text-anchor='middle'>Base Image</text>
-
-<!-- Drupal 10 Box -->
-<rect class='box' x='220' y='60' width='160' height='100' fill='#0a5d89'/>
-<text class='text' x='300' y='105' text-anchor='middle'>Drupal 10</text>
-<text class='text' x='300' y='125' text-anchor='middle'>Base Image</text>
+<!-- Drupal 11 Box (primary image) -->
+<rect class='box' x='120' y='60' width='160' height='100'/>
+<text class='text' x='200' y='105' text-anchor='middle'>Drupal 11</text>
+<text class='text' x='200' y='125' text-anchor='middle'>Base Image</text>
 
 <!-- CI Build Box -->
 <rect class='box' x='420' y='20' width='180' height='80' fill='#1d8237'/>
@@ -32,8 +27,6 @@
 <text class='text' x='510' y='180' text-anchor='middle'>Registry</text>
 
 <!-- Arrows -->
-<line class='arrow' x1='180' y1='110' x2='220' y2='110'/>
-<line class='arrow' x1='180' y1='110' x2='420' y2='60'/>
-<line class='arrow' x1='380' y1='110' x2='420' y2='60'/>
+<line class='arrow' x1='280' y1='110' x2='420' y2='60'/>
 <line class='arrow' x1='510' y1='100' x2='510' y2='130'/>
 </svg>

@@ -4,14 +4,14 @@
     https://dl.circleci.com/status-badge/redirect/gh/scbd/drupal-docker-wrapper/tree/master
 )
 
-Dockerized Drupal base images (Drupal 11 and 10 variants) with common tools and
+Dockerized Drupal 11 base image with common tools and
 modules preinstalled to speed up local development and CI/CD.
 
 ![Architecture overview](docs/images/overview.svg)
 
 ## What this image provides
 
-- Drupal 11 image (root `Dockerfile`) and Drupal 10 image (`d10/Dockerfile`).
+- Drupal 11 image (root `Dockerfile`).
 - Pinned contrib modules & Drush installed in a dedicated build stage (auditable versions).
 - Generated `modules-versions.txt` manifest (direct dependencies) for quick inspection.
 - Composer patching enabled (see `Dockerfile` for applied patches) – deterministic (lockfile retained).
@@ -20,15 +20,22 @@ modules preinstalled to speed up local development and CI/CD.
 
 ## Layered build strategy (base + modules)
 
-The root `Dockerfile` now has three stages:
+The root `Dockerfile` has three stages:
 
-1. base-core: Drupal core + system packages + composer configuration (no contrib modules).
-2. with-modules: Adds explicit `composer require` lines so versions remain visible in Docker history; writes
-   `modules-versions.txt`.
-3. final: Carries labels, healthcheck, permissions tightening.
+1. **base-core**: Drupal core (11.2.8/PHP 8.4) + minimal system packages + composer configuration (no contrib modules).
+2. **with-modules**: Installs `cweagans/composer-patches` first, then all modules in a single consolidated
+   `composer require` for cache efficiency; writes `modules-versions.txt`.
+3. **final**: Adds labels, healthcheck, entrypoint wrapper, Apache docroot symlink, and permissions.
 
-This preserves your desire to SEE module versions in the Dockerfile while still producing a reproducible, immutable
-image.
+This preserves module version visibility in the Dockerfile while producing a reproducible, immutable image.
+
+### Build context exclusions
+
+A `.dockerignore` file excludes sensitive and unnecessary files from the build context:
+
+- Environment files (`.env`, `.env*`)
+- Archived patches (`patches/old/`)
+- Git, CI/CD, documentation, and IDE files
 
 ## Why avoid mounting code over the image
 
@@ -48,7 +55,7 @@ Avoid mounting `vendor/`, `web/modules/contrib/`, or the project root unless you
 
 ## Quick start (Drupal 11 image)
 
-Replace `VERSION_TAG` (e.g. `11.2.3-v1`).
+Replace `VERSION_TAG` (e.g. `11.2.8-v1`).
 
 ```sh
 # Build
@@ -61,12 +68,6 @@ docker run -d --name drupal -p 8080:80 \
 
 # Inspect installed (direct) dependency versions
 docker exec drupal head -50 /opt/drupal/modules-versions.txt
-```
-
-### Drupal 10 variant
-
-```sh
-docker build --platform linux/amd64  -f d10/Dockerfile -t scbd/drupal-docker-wrapper:10-VERSION_TAG .
 ```
 
 ### Drush site install example
@@ -93,15 +94,14 @@ docker exec drupal vendor/bin/drush updb -y && \
 
 ## Security & hardening notes
 
-- Base image vulnerabilities: track `drupal:11.x-php8.3` upstream updates; rebuild regularly.
-- Permissions: directories 755, files 644, writable `sites/default/files` set to 775 (adjust for runtime user if you
-  drop root).
-- Healthcheck: simple HTTP probe; customize to a lightweight status endpoint for production.
-- Lockfile: we retain `composer.lock` (do NOT delete) ensuring deterministic dependency resolution.
-- Patch provenance: All applied patches are declared inline in `Dockerfile`; consider mirroring patches internally and
-  pinning SHA256 hashes for integrity.
-- Supply chain: explicit versions prevent implicit upgrades; periodically review `composer outdated --direct` in a CI
-  job for update visibility.
+- **Base image**: Track `drupal:11.x-php8.4` upstream updates; rebuild regularly.
+- **Build context**: `.dockerignore` excludes `.env*`, `patches/old/`, git/CI files from the image.
+- **Permissions**: Directories 755, files 644, writable `sites/default/files` set to 775.
+- **Healthcheck**: Simple HTTP probe; customize to a lightweight status endpoint for production.
+- **Lockfile**: We retain `composer.lock` (do NOT delete) ensuring deterministic dependency resolution.
+- **Patch provenance**: Patches declared inline in `Dockerfile`; archived in `patches/old/` when no longer needed.
+- **Supply chain**: Explicit versions prevent implicit upgrades; periodically review `composer outdated --direct` in a
+  CI job for update visibility.
 
 ## Optional: local development workflow
 
@@ -118,7 +118,7 @@ In that case, run `composer install` locally (not inside production container) s
 
 ## CI/CD (CircleCI)
 
-The provided pipeline builds, lints, and smoke-tests both Drupal 11 and Drupal 10 images.
+The provided pipeline builds, lints, and smoke-tests the Drupal 11 image.
 
 ### Testing Locally
 
