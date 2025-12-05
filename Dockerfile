@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.2.8-php8.4 AS base-core
+FROM drupal:11.2.9-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
 RUN --mount=type=cache,target=/root/.composer/cache \
     set -eux; \
     composer require \
-      'drush/drush:13.6.2' \
+      'drush/drush:13.7.0' \
       'drupal/administerusersbyrole:3.6.0' \
       'drupal/auditfiles:4.2.4' \
       'drupal/admin_toolbar:3.6.2' \
@@ -87,6 +87,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/ant_bulk:2.0.0-rc4' \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \   
+      'drupal/linkit:7.0.1' \   
       --with-all-dependencies \
       --no-interaction \
       --no-progress \

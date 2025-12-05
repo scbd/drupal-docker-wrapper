@@ -162,7 +162,14 @@ chown -R www-data:www-data /var/www/.composer
 
 ### Build and push in one step (local)
 
-docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:latest -t scbd/drupal-docker-wrapper:11.2.4 . --push
+```sh
+# for dev and stg
+docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:${env}-${VERSION_TAG} . --push
+
+#prod
+docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:${VERSION_TAG} -t scbd/drupal-docker-wrapper:latest . --push
+```
+
 
 ## License
 
