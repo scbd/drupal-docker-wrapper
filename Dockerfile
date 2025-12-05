@@ -48,46 +48,46 @@ RUN --mount=type=cache,target=/root/.composer/cache \
     set -eux; \
     composer require \
       'drush/drush:13.7.0' \
-      'drupal/administerusersbyrole:3.6.0' \
-      'drupal/auditfiles:4.2.4' \
       'drupal/admin_toolbar:3.6.2' \
-      'drupal/ckeditor_bs_grid:2.0.12' \
-      'drupal/ckeditor5_template:1.0.8' \
-      'drupal/ckeditor5_fullscreen:1.0' \
-      'drupal/editor_paste_plain:1.0.0-rc1' \
-      'drupal/decoupled_router:2.0.6' \
-      'drupal/forum:1.0.2' \
-      'drupal/jsonapi_site:1.0.2' \
-      'drupal/key_auth:2.2.0' \
-      'drupal/pathauto:1.14' \
-      'drupal/token:1.16' \
-      'drupal/externalauth:2.0.8' \
-      'drupal/redirect:1.12' \
-      'drupal/samlauth:3.11' \
-      'drupal/mailsystem:4.5' \
-      'drupal/robotstxt:1.6' \
-      'drupal/symfony_mailer:1.6' \
-      'drupal/remove_entity_untranslatable_field_validation:1.3' \
-      'drupal/jsonapi_include:2.0.0' \
-      'drupal/js_cookie:1.0.2' \
-      'drupal/menu_admin_per_menu:1.7' \
-      'drupal/menu_link_attributes:1.5' \
-      'drupal/quick_node_clone:1.22' \
-      'drupal/jsonapi_extras:3.27' \
-      'drupal/fpa:4.0.1' \
-      'drupal/search_api:1.40' \
-      'drupal/facets:3.0.2' \
-      'drupal/jsonapi_resources:1.3' \
-      'drupal/jsonapi_search_api:1.0-rc5' \
-      'drupal/devel:5.4.0' \
-      'drupal/ckeditor5_icons:1.2.1' \
-      'drupal/auto_node_translate_deepl:1.0.0' \
+      'drupal/administerusersbyrole:3.6.0' \
+      'drupal/ant_bulk:2.0.0-rc4' \
+      'drupal/auditfiles:4.2.4' \
       'drupal/auto_node_translate:3.0.2' \
       'drupal/auto_node_translate_amazon:1.0.0-rc1' \
-      'drupal/ant_bulk:2.0.0-rc4' \
+      'drupal/auto_node_translate_deepl:1.0.0' \
+      'drupal/ckeditor_bs_grid:2.0.12' \
+      'drupal/ckeditor5_fullscreen:1.0' \
+      'drupal/ckeditor5_icons:1.2.1' \
+      'drupal/ckeditor5_template:1.0.8' \
+      'drupal/decoupled_router:2.0.6' \
+      'drupal/devel:5.4.0' \
+      'drupal/editor_paste_plain:1.0.0-rc1' \
+      'drupal/externalauth:2.0.8' \
+      'drupal/facets:3.0.2' \
       'drupal/fontawesome:3.0.0' \
-      'drupal/fontawesome_iconpicker:3.0.0' \   
-      'drupal/linkit:7.0.1' \   
+      'drupal/fontawesome_iconpicker:3.0.0' \
+      'drupal/forum:1.0.2' \
+      'drupal/fpa:4.0.1' \
+      'drupal/js_cookie:1.0.2' \
+      'drupal/jsonapi_extras:3.27' \
+      'drupal/jsonapi_include:2.0.0' \
+      'drupal/jsonapi_resources:1.3' \
+      'drupal/jsonapi_search_api:1.0-rc5' \
+      'drupal/jsonapi_site:1.0.2' \
+      'drupal/key_auth:2.2.0' \
+      'drupal/linkit:7.0.1' \
+      'drupal/mailsystem:4.5' \
+      'drupal/menu_admin_per_menu:1.7' \
+      'drupal/menu_link_attributes:1.5' \
+      'drupal/pathauto:1.14' \
+      'drupal/quick_node_clone:1.22' \
+      'drupal/redirect:1.12' \
+      'drupal/remove_entity_untranslatable_field_validation:1.3' \
+      'drupal/robotstxt:1.6' \
+      'drupal/samlauth:3.11' \
+      'drupal/search_api:1.40' \
+      'drupal/symfony_mailer:1.6' \
+      'drupal/token:1.16' \
       --with-all-dependencies \
       --no-interaction \
       --no-progress \
