@@ -75,7 +75,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/jsonapi_site:1.0.2' \
       'drupal/key_auth:2.2.0' \
-      'drupal/linkit:7.0.1' \
+      'drupal/linkit:7.0.11' \
       'drupal/mailsystem:4.5' \
       'drupal/menu_admin_per_menu:1.7' \
       'drupal/menu_link_attributes:1.5' \
