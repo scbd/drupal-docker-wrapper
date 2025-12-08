@@ -1,15 +1,36 @@
 # Generic logic for applying Drupal patches at container start.
 # shellcheck shell=bash
 
-# Expects ROOT_CANDIDATES, PATCH_CANDIDATES, discover_patch_candidates, and
-# log() from entrypoint-common.sh
+# Expects ROOT_CANDIDATES, log(), find_project_root() from common.sh
+
+# Discovered patch file locations (populated at runtime).
+# We intentionally ignore any files under a "patches/old" subdirectory.
+PATCH_CANDIDATES=()
+
+discover_patch_candidates() {
+  PATCH_CANDIDATES=()
+
+  local root
+  for root in "${ROOT_CANDIDATES[@]}"; do
+    local patches_dir="${root}/patches"
+    if [[ ! -d "${patches_dir}" ]]; then
+      continue
+    fi
+
+    # Find all .patch files, but skip anything under patches/old
+    while IFS= read -r -d '' pf; do
+      if [[ "${pf}" == *"/patches/old/"* ]]; then
+        continue
+      fi
+      PATCH_CANDIDATES+=("${pf}")
+    done < <(find "${patches_dir}" -type f -name "*.patch" -print0 2>/dev/null || true)
+  done
+}
 
 apply_patch() {
   local target_dir="$1"
   local patch_file="$2"
 
-  # Use a marker file derived from the patch filename so multiple patches can
-  # be tracked independently.
   local patch_basename
   patch_basename="$(basename "${patch_file}")"
   local marker_file="${target_dir}/.${patch_basename}.applied"
@@ -59,8 +80,7 @@ apply_patch() {
   return 1
 }
 
-entrypoint_apply_patches_if_present() {
-  # Refresh the list of available patches
+apply_patches_if_present() {
   discover_patch_candidates
 
   if [[ ${#PATCH_CANDIDATES[@]} -eq 0 ]]; then

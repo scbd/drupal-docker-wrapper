@@ -15,14 +15,53 @@ modules preinstalled to speed up local development and CI/CD.
 - Pinned contrib modules & Drush installed in a dedicated build stage (auditable versions).
 - Generated `modules-versions.txt` manifest (direct dependencies) for quick inspection.
 - Composer patching enabled (see `Dockerfile` for applied patches) – deterministic (lockfile retained).
-- Preinstalled CLI tools: curl, nano, mariadb-client.
+- Preinstalled CLI tools: curl, gosu, patch, git.
 - Healthcheck stub (override as needed).
+- **After-start background script** for deferred heavy operations (module reinstall, cleanup, cache rebuild).
+
+## Entrypoint & After-Start Architecture
+
+The container uses a two-phase startup approach:
+
+### Phase 1: Entrypoint (immediate)
+
+The `entrypoint.sh` script runs immediately at container start:
+
+1. Applies any patches from `/opt/drupal/patches/` (skips `patches/old/`)
+2. Forks the after-start script to run in 60 seconds
+3. Starts Apache immediately (healthcheck unaffected)
+
+### Phase 2: After-Start (60 seconds later)
+
+The `after-start.sh` script runs in the background after Apache is healthy:
+
+1. **Reinstalls modules** with exact versions (as www-data via gosu)
+2. **Cleans up deprecated paths** (old modules, robots.txt)
+3. **Fixes permissions** on sites/files directories
+4. **Rebuilds Drupal cache** (as www-data via gosu)
+
+This approach ensures:
+
+- Fast container startup (Apache available immediately)
+- Heavy composer operations don't block healthchecks
+- Privilege separation (composer/drush run as www-data, not root)
+
+### Script Structure
+
+```text
+scripts/
+├── entrypoint.sh      # Main entrypoint (thin - patches + fork after-start)
+├── after-start.sh     # Background script (modules, cleanup, perms, cache)
+└── lib/
+    ├── common.sh      # Shared utilities (log, find_project_root)
+    └── patches.sh     # Patch application logic
+```
 
 ## Layered build strategy (base + modules)
 
 The root `Dockerfile` has three stages:
 
-1. **base-core**: Drupal core (11.2.8/PHP 8.4) + minimal system packages + composer configuration (no contrib modules).
+1. **base-core**: Drupal core (11.2.9/PHP 8.4) + minimal system packages + composer configuration (no contrib modules).
 2. **with-modules**: Installs `cweagans/composer-patches` first, then all modules in a single consolidated
    `composer require` for cache efficiency; writes `modules-versions.txt`.
 3. **final**: Adds labels, healthcheck, entrypoint wrapper, Apache docroot symlink, and permissions.
@@ -55,7 +94,7 @@ Avoid mounting `vendor/`, `web/modules/contrib/`, or the project root unless you
 
 ## Quick start (Drupal 11 image)
 
-Replace `VERSION_TAG` (e.g. `11.2.8-v1`).
+Replace `VERSION_TAG` (e.g. `11.2.9-v10`).
 
 ```sh
 # Build
@@ -85,36 +124,19 @@ docker exec -it drupal bash -lc "vendor/bin/drush si -y standard \
 1. Edit the version in the `composer require` line inside the `with-modules` stage of the `Dockerfile`.
 2. Rebuild & tag the image.
 3. Deploy the new image (ensure code is not volume-mounted).
-4. (Optional) Clear Drupal caches / run database updates:
-
-```sh
-docker exec drupal vendor/bin/drush updb -y && \
-  docker exec drupal vendor/bin/drush cr
-```
+4. The after-start script will automatically rebuild caches ~60 seconds after startup.
 
 ## Security & hardening notes
 
 - **Base image**: Track `drupal:11.x-php8.4` upstream updates; rebuild regularly.
 - **Build context**: `.dockerignore` excludes `.env*`, `patches/old/`, git/CI files from the image.
 - **Permissions**: Directories 755, files 644, writable `sites/default/files` set to 775.
+- **Privilege separation**: After-start operations run as www-data via gosu, not root.
 - **Healthcheck**: Simple HTTP probe; customize to a lightweight status endpoint for production.
 - **Lockfile**: We retain `composer.lock` (do NOT delete) ensuring deterministic dependency resolution.
 - **Patch provenance**: Patches declared inline in `Dockerfile`; archived in `patches/old/` when no longer needed.
 - **Supply chain**: Explicit versions prevent implicit upgrades; periodically review `composer outdated --direct` in a
   CI job for update visibility.
-
-## Optional: local development workflow
-
-If you prefer live-editing code & modules locally:
-
-```sh
-docker run -d --name drupal-dev -p 8080:80 \
-  -v "$(pwd)/web:/opt/drupal/web" \
-  -v drupal-sites:/opt/drupal/web/sites \
-  scbd/drupal-docker-wrapper:VERSION_TAG
-```
-
-In that case, run `composer install` locally (not inside production container) so production builds remain clean.
 
 ## CI/CD (CircleCI)
 
@@ -151,7 +173,8 @@ Add an automated scheduled rebuild (weekly) to pick up upstream security patches
 | Composer patch not applied | Patch URL changed or network issue | Mirror patch; verify URL; rebuild |
 | High CVE count in scan | Outdated base image packages | Rebuild with newer base tag; maybe dist-upgrade |
 | Drush missing | Stage caching issue | Clear build cache (`--no-cache`) and rebuild |
-| Composer cannot create `/var/www/.composer/...` | Composer cache not writable | Set writable composer home. |
+| After-start not running | Check logs for errors | `docker logs <container>` - look for `[after-start]` messages |
+| Exit code 137 at startup | OOM during composer | After-start runs as www-data; check container memory limits |
 
 Note: If you override the container USER or execute composer in a derived image, make sure to:
 
@@ -169,7 +192,6 @@ docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:${env}-${VERSI
 #prod
 docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:${VERSION_TAG} -t scbd/drupal-docker-wrapper:latest . --push
 ```
-
 
 ## License
 

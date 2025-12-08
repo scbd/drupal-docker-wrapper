@@ -6,11 +6,12 @@ FROM drupal:11.2.9-php8.4 AS base-core
 WORKDIR /opt/drupal
 
 # System packages (keep minimal) - cache apt metadata
+# gosu is needed for dropping privileges in entrypoint
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt \
     set -eux; \
     apt-get update -y; \
-    apt-get install --no-install-recommends -y curl ca-certificates unzip; \
+    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu; \
     rm -rf /var/lib/apt/lists/*
 
 # Copy local patches into the image so composer-patches can use them
@@ -78,7 +79,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/linkit:7.0.11' \
       'drupal/mailsystem:4.5' \
       'drupal/menu_admin_per_menu:1.7' \
-      'drupal/menu_link_attributes:1.5' \
+      'drupal/menu_link_attributes:1.6' \
       'drupal/pathauto:1.14' \
       'drupal/quick_node_clone:1.22' \
       'drupal/redirect:1.12' \
@@ -108,6 +109,9 @@ RUN --mount=type=cache,target=/var/cache/apt \
 FROM with-modules AS final
 WORKDIR /opt/drupal
 
+# Disable deprecated assert.active INI setting (deprecated in PHP 8.3+)
+RUN echo 'zend.assertions=-1' > /usr/local/etc/php/conf.d/zz-disable-assert.ini
+
 # Expose manifest for quick inspection
 LABEL org.opencontainers.image.title="Drupal 11 Base with Contrib Modules" \
       org.opencontainers.image.source="https://github.com/scbd/drupal-docker-wrapper" \
@@ -120,9 +124,10 @@ RUN set -eux; \
     ln -s /opt/drupal/web /var/www/html; \
     chown -R www-data:www-data /opt/drupal
 
-# Copy entrypoint wrapper and its helper scripts
+# Copy entrypoint wrapper, after-start script, and lib helpers
 COPY --chown=www-data:www-data ./scripts/*.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY --chown=www-data:www-data ./scripts/lib/ /usr/local/bin/lib/
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/after-start.sh
 
 # Ensure Composer home/cache is writable for www-data
 ENV COMPOSER_HOME=/var/www/.composer \
@@ -131,11 +136,11 @@ RUN set -eux; \
     mkdir -p "$COMPOSER_CACHE_DIR"; \
     chown -R www-data:www-data /var/www/.composer
 
-# (Optional) HEALTHCHECK - simple HTTP check (can be overridden)
+# (Optional) HEALTHCHECK - simple HTTP check on root path
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS http://localhost/healthz || curl -fsS http://localhost/ || exit 1
+    CMD curl -fsS http://localhost/ -o /dev/null || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["apache2-foreground"]
 
-USER www-data
+# Note: Entrypoint runs as root to fix permissions, then drops to www-data
