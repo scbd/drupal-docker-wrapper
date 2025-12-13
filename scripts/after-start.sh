@@ -12,23 +12,92 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 LOG_PREFIX="after-start"
 
-# Version tag for this release
-AFTER_START_VERSION="11.2.9-v10"
+# Version tag for this release (used only to gate one-time startup tasks)
+AFTER_START_VERSION="11.2.10-v2"
 MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
 
-# Reinstall specific modules with exact versions
-reinstall_modules() {
+# Workaround for contrib module upgrades (notably Linkit):
+# - If an old module directory is present (commonly from a dev volume mount)
+#   move it aside to a temp location
+# - Run `composer install` to restore module directories based on composer.lock
+# - Cleanup temp backup and fix ownership/permissions
+repair_composer_managed_modules() {
   local project_root
   project_root="$(find_project_root)" || return 0
 
-  log "Reinstalling modules with exact versions..."
+  local web_root="${project_root}/web"
+  local linkit_dir="${web_root}/modules/contrib/linkit"
+
+  local needs_repair=0
+
+  # Allow manual override.
+  if [[ "${DRUPAL_AFTER_START_FORCE_MODULE_REPAIR:-}" == "1" ]]; then
+    needs_repair=1
+  fi
+
+  # If nothing looks out of place, skip quickly.
+  if [[ ! -d "${linkit_dir}" ]]; then
+    log "No Linkit module directory found at ${linkit_dir}; skipping module repair."
+    return 0
+  fi
+
+  # Heuristics to detect a stale/volume-mounted module directory:
+  # - wrong ownership (common when created by root on host)
+  # - missing composer.json
+  # - directory unexpectedly empty
+  if [[ "${needs_repair}" -eq 0 ]]; then
+    local www_uid www_gid
+    www_uid="$(id -u www-data 2>/dev/null || echo 33)"
+    www_gid="$(id -g www-data 2>/dev/null || echo 33)"
+
+    local dir_owner
+    dir_owner="$(stat -c '%u:%g' "${linkit_dir}" 2>/dev/null || true)"
+
+    if [[ -n "${dir_owner}" && "${dir_owner}" != "${www_uid}:${www_gid}" ]]; then
+      needs_repair=1
+    elif [[ ! -f "${linkit_dir}/composer.json" ]]; then
+      needs_repair=1
+    elif ! find "${linkit_dir}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+      needs_repair=1
+    fi
+  fi
+
+  if [[ "${needs_repair}" -eq 0 ]]; then
+    log "Linkit module directory looks healthy; skipping module repair."
+    return 0
+  fi
+
+  local backup_root="/tmp/drupal-module-backups/${AFTER_START_VERSION}"
+  local backup_dir="${backup_root}/linkit"
+
+  log "Preparing to repair composer-managed modules (Linkit)."
+  mkdir -p "${backup_root}"
+
+  # Move Linkit aside so composer can lay down the version pinned in composer.lock.
+  # Use a best-effort approach; if we cannot move it, we still try composer install.
+  if mv "${linkit_dir}" "${backup_dir}" 2>/dev/null; then
+    log "Moved ${linkit_dir} -> ${backup_dir}"
+  else
+    log "Could not move ${linkit_dir} to ${backup_dir}; continuing with composer install."
+  fi
+
+  log "Running composer install to ensure module tree matches composer.lock..."
   cd "${project_root}" || return 0
-  
-  # Run composer require as www-data to avoid permission issues
-  gosu www-data composer require \
-    'drupal/linkit:7.0.11' \
-    'drupal/menu_link_attributes:1.6' \
-    --no-interaction --no-progress 2>&1 || log "Composer require had issues; continuing."
+
+  # Run as www-data to keep permissions sane.
+  # Note: We intentionally use install (not require) to avoid mutating composer.json/lock at runtime.
+  gosu www-data composer install \
+    --no-interaction \
+    --no-progress \
+    --optimize-autoloader \
+    --prefer-dist \
+    2>&1 || log "Composer install had issues; continuing."
+
+  # Best-effort cleanup of temp backups after composer succeeds.
+  # If composer failed, leaving the backup can help with debugging.
+  if [[ -d "${backup_root}" ]]; then
+    rm -rf "${backup_root}" 2>/dev/null || true
+  fi
 }
 
 # Clean up deprecated paths
@@ -79,6 +148,26 @@ ensure_sites_files_permissions() {
   fi
 }
 
+# Best-effort ownership fixups for paths commonly mounted as volumes.
+ensure_runtime_ownership() {
+  local project_root
+  project_root="$(find_project_root)" || return 0
+
+  local paths=(
+    "${project_root}/web/sites"
+    "${project_root}/web/modules"
+    "${project_root}/vendor"
+    "/var/www/.composer"
+  )
+
+  local p
+  for p in "${paths[@]}"; do
+    if [[ -e "${p}" ]]; then
+      chown -R www-data:www-data "${p}" 2>/dev/null || true
+    fi
+  done
+}
+
 # Rebuild Drupal cache
 rebuild_cache() {
   local project_root
@@ -105,14 +194,15 @@ main() {
 
   log "Starting after-start tasks for ${AFTER_START_VERSION}..."
 
-  # 1. Reinstall modules (runs as www-data via gosu)
-  reinstall_modules
+  # 1. Repair composer-managed modules (one-time; runs composer install as www-data)
+  repair_composer_managed_modules
 
-  # 2. Cleanup deprecated paths (important after install)
+  # 2. Cleanup deprecated paths
   cleanup_deprecated_paths
 
-  # 3. Fix permissions on sites/files
+  # 3. Fix permissions on sites/files and common mounted dirs
   ensure_sites_files_permissions
+  ensure_runtime_ownership
 
   # 4. Rebuild cache (runs as www-data via gosu)
   rebuild_cache
