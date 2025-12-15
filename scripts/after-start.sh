@@ -13,10 +13,11 @@ source "${SCRIPT_DIR}/lib/common.sh"
 LOG_PREFIX="after-start"
 
 # Version tag for this release (used only to gate one-time startup tasks)
-AFTER_START_VERSION="11.2.10-v2"
+AFTER_START_VERSION="11.2.10-v3"
 MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
 
-# Workaround for contrib module upgrades (notably Linkit):
+# Generic module repair for contrib modules that may have stale directories
+# Reads from module-repair-list.json to determine which modules need checking
 # - If an old module directory is present (commonly from a dev volume mount)
 #   move it aside to a temp location
 # - Run `composer install` to restore module directories based on composer.lock
@@ -25,61 +26,119 @@ repair_composer_managed_modules() {
   local project_root
   project_root="$(find_project_root)" || return 0
 
-  local web_root="${project_root}/web"
-  local linkit_dir="${web_root}/modules/contrib/linkit"
+  local module_list_file="${SCRIPT_DIR}/module-repair-list.json"
+  
+  # Check if module repair list exists
+  if [[ ! -f "${module_list_file}" ]]; then
+    log "Module repair list not found at ${module_list_file}; skipping module repair."
+    return 0
+  fi
+
+  # Check if jq is available for JSON parsing
+  if ! command -v jq >/dev/null 2>&1; then
+    log "jq not available; skipping module repair."
+    return 0
+  fi
+
+  local repair_version
+  repair_version=$(jq -r '.version // empty' "${module_list_file}" 2>/dev/null || echo "")
+  
+  # Verify version matches to ensure we're running the right repair list
+  if [[ -n "${repair_version}" && "${repair_version}" != "${AFTER_START_VERSION}" ]]; then
+    log "Module repair list version (${repair_version}) does not match script version (${AFTER_START_VERSION}); skipping."
+    return 0
+  fi
+
+  local modules_to_repair
+  modules_to_repair=$(jq -c '.modules[]' "${module_list_file}" 2>/dev/null || echo "")
+  
+  if [[ -z "${modules_to_repair}" ]]; then
+    log "No modules configured for repair; skipping."
+    return 0
+  fi
 
   local needs_repair=0
-
-  # Allow manual override.
+  local modules_needing_repair=()
+  
+  # Allow manual override
   if [[ "${DRUPAL_AFTER_START_FORCE_MODULE_REPAIR:-}" == "1" ]]; then
     needs_repair=1
   fi
 
-  # If nothing looks out of place, skip quickly.
-  if [[ ! -d "${linkit_dir}" ]]; then
-    log "No Linkit module directory found at ${linkit_dir}; skipping module repair."
-    return 0
-  fi
+  local www_uid www_gid
+  www_uid="$(id -u www-data 2>/dev/null || echo 33)"
+  www_gid="$(id -g www-data 2>/dev/null || echo 33)"
 
-  # Heuristics to detect a stale/volume-mounted module directory:
-  # - wrong ownership (common when created by root on host)
-  # - missing composer.json
-  # - directory unexpectedly empty
-  if [[ "${needs_repair}" -eq 0 ]]; then
-    local www_uid www_gid
-    www_uid="$(id -u www-data 2>/dev/null || echo 33)"
-    www_gid="$(id -g www-data 2>/dev/null || echo 33)"
-
-    local dir_owner
-    dir_owner="$(stat -c '%u:%g' "${linkit_dir}" 2>/dev/null || true)"
-
-    if [[ -n "${dir_owner}" && "${dir_owner}" != "${www_uid}:${www_gid}" ]]; then
-      needs_repair=1
-    elif [[ ! -f "${linkit_dir}/composer.json" ]]; then
-      needs_repair=1
-    elif ! find "${linkit_dir}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
-      needs_repair=1
+  # Check each module in the list
+  while IFS= read -r module_json; do
+    local module_name module_path module_reason
+    module_name=$(echo "${module_json}" | jq -r '.name // empty')
+    module_path=$(echo "${module_json}" | jq -r '.path // empty')
+    module_reason=$(echo "${module_json}" | jq -r '.reason // "Module upgrade may require repair"')
+    
+    [[ -z "${module_name}" || -z "${module_path}" ]] && continue
+    
+    local full_path="${project_root}/${module_path}"
+    
+    # If directory doesn't exist, skip this module
+    if [[ ! -d "${full_path}" ]]; then
+      log "Module ${module_name} directory not found at ${full_path}; skipping."
+      continue
     fi
-  fi
+    
+    # Heuristics to detect a stale/volume-mounted module directory:
+    # - wrong ownership (common when created by root on host)
+    # - missing composer.json
+    # - directory unexpectedly empty
+    local module_needs_repair=0
+    
+    if [[ "${needs_repair}" -eq 0 ]]; then
+      local dir_owner
+      dir_owner="$(stat -c '%u:%g' "${full_path}" 2>/dev/null || true)"
 
+      if [[ -n "${dir_owner}" && "${dir_owner}" != "${www_uid}:${www_gid}" ]]; then
+        log "Module ${module_name} has incorrect ownership; marking for repair."
+        module_needs_repair=1
+      elif [[ ! -f "${full_path}/composer.json" ]]; then
+        log "Module ${module_name} missing composer.json; marking for repair."
+        module_needs_repair=1
+      elif ! find "${full_path}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+        log "Module ${module_name} directory is empty; marking for repair."
+        module_needs_repair=1
+      fi
+    else
+      module_needs_repair=1
+    fi
+    
+    if [[ "${module_needs_repair}" -eq 1 ]]; then
+      needs_repair=1
+      modules_needing_repair+=("${module_name}:${full_path}")
+    fi
+  done < <(echo "${modules_to_repair}")
+
+  # If no modules need repair, exit early
   if [[ "${needs_repair}" -eq 0 ]]; then
-    log "Linkit module directory looks healthy; skipping module repair."
+    log "All configured modules look healthy; skipping module repair."
     return 0
   fi
 
   local backup_root="/tmp/drupal-module-backups/${AFTER_START_VERSION}"
-  local backup_dir="${backup_root}/linkit"
-
-  log "Preparing to repair composer-managed modules (Linkit)."
+  
+  log "Preparing to repair ${#modules_needing_repair[@]} composer-managed module(s)."
   mkdir -p "${backup_root}"
 
-  # Move Linkit aside so composer can lay down the version pinned in composer.lock.
-  # Use a best-effort approach; if we cannot move it, we still try composer install.
-  if mv "${linkit_dir}" "${backup_dir}" 2>/dev/null; then
-    log "Moved ${linkit_dir} -> ${backup_dir}"
-  else
-    log "Could not move ${linkit_dir} to ${backup_dir}; continuing with composer install."
-  fi
+  # Move problematic modules aside
+  for module_entry in "${modules_needing_repair[@]}"; do
+    local module_name="${module_entry%%:*}"
+    local module_full_path="${module_entry#*:}"
+    local backup_dir="${backup_root}/${module_name}"
+    
+    if mv "${module_full_path}" "${backup_dir}" 2>/dev/null; then
+      log "Moved ${module_full_path} -> ${backup_dir}"
+    else
+      log "Could not move ${module_full_path} to ${backup_dir}; continuing with composer install."
+    fi
+  done
 
   log "Running composer install to ensure module tree matches composer.lock..."
   cd "${project_root}" || return 0

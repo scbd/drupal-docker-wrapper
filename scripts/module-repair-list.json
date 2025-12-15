@@ -1,0 +1,10 @@
+{
+  "version": "11.2.10-v3",
+  "modules": [
+    {
+      "name": "linkit",
+      "path": "web/modules/contrib/linkit",
+      "reason": "Module upgrade may leave stale directory from volume mount"
+    }
+  ]
+}
