@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.2.10-php8.4 AS base-core
+FROM drupal:11.3.0-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -58,7 +58,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/auto_node_translate_deepl:1.0.0' \
       'drupal/ckeditor_bs_grid:2.0.12' \
       'drupal/ckeditor5_fullscreen:1.0' \
-      'drupal/ckeditor5_icons:1.2.1' \
+      'drupal/ckeditor5_icons:1.2.2' \
       'drupal/ckeditor5_template:1.0.8' \
       'drupal/decoupled_router:2.0.6' \
       'drupal/devel:5.4.0' \
