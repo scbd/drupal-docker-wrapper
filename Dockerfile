@@ -70,7 +70,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/forum:1.0.2' \
       'drupal/fpa:4.0.1' \
       'drupal/js_cookie:1.0.2' \
-      'drupal/jsonapi_extras:3.27' \
+      'drupal/jsonapi_extras:3.x-dev@dev' \
       'drupal/jsonapi_include:2.0.0' \
       'drupal/jsonapi_resources:1.3' \
       'drupal/jsonapi_search_api:1.0-rc5' \
@@ -94,6 +94,8 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       --no-progress \
       --optimize-autoloader; \
     composer show --no-interaction --direct > /opt/drupal/modules-versions.txt
+#       'drupal/jsonapi_extras:3.27' \
+
 
 # Keep 'patch' and 'git' at runtime so entrypoint and composer operations succeed
 # hadolint ignore=DL3008
