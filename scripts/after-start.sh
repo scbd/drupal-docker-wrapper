@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 LOG_PREFIX="after-start"
 
 # Version tag for this release (used only to gate one-time startup tasks)
-AFTER_START_VERSION="11.2.10-v3"
+AFTER_START_VERSION="11.3.1-v2"
 MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
 
 # Generic module repair for contrib modules that may have stale directories
@@ -48,17 +48,14 @@ repair_composer_managed_modules() {
     return 0
   fi
 
-  local needs_repair=0
+  local force_repair="${DRUPAL_AFTER_START_FORCE_MODULE_REPAIR:-0}"
   local modules_needing_repair=()
   
-  # Allow manual override
-  if [[ "${DRUPAL_AFTER_START_FORCE_MODULE_REPAIR:-}" == "1" ]]; then
-    needs_repair=1
-  fi
-
   local www_uid www_gid
   www_uid="$(id -u www-data 2>/dev/null || echo 33)"
   www_gid="$(id -g www-data 2>/dev/null || echo 33)"
+
+  log "Checking modules for repair (force_repair=${force_repair}, www-data=${www_uid}:${www_gid})..."
 
   # Check each module in the list
   while IFS= read -r module_json; do
@@ -71,44 +68,57 @@ repair_composer_managed_modules() {
     
     local full_path="${project_root}/${module_path}"
     
-    # If directory doesn't exist, skip this module
+    log "Checking module ${module_name} at ${full_path}..."
+    
+    # If directory doesn't exist, mark for repair (composer install will create it)
     if [[ ! -d "${full_path}" ]]; then
-      log "Module ${module_name} directory not found at ${full_path}; skipping."
+      log "Module ${module_name} directory not found; marking for repair."
+      modules_needing_repair+=("${module_name}:${full_path}")
+      continue
+    fi
+    
+    # If force repair is enabled, mark all modules for repair
+    if [[ "${force_repair}" == "1" ]]; then
+      log "Module ${module_name} marked for repair (force mode)."
+      modules_needing_repair+=("${module_name}:${full_path}")
       continue
     fi
     
     # Heuristics to detect a stale/volume-mounted module directory:
     # - wrong ownership (common when created by root on host)
-    # - missing composer.json
+    # - missing composer.json (corrupted install)
+    # - missing .info.yml file (corrupted/incomplete module)
     # - directory unexpectedly empty
     local module_needs_repair=0
+    local repair_reason=""
     
-    if [[ "${needs_repair}" -eq 0 ]]; then
-      local dir_owner
-      dir_owner="$(stat -c '%u:%g' "${full_path}" 2>/dev/null || true)"
+    local dir_owner
+    dir_owner="$(stat -c '%u:%g' "${full_path}" 2>/dev/null || stat -f '%u:%g' "${full_path}" 2>/dev/null || true)"
 
-      if [[ -n "${dir_owner}" && "${dir_owner}" != "${www_uid}:${www_gid}" ]]; then
-        log "Module ${module_name} has incorrect ownership; marking for repair."
-        module_needs_repair=1
-      elif [[ ! -f "${full_path}/composer.json" ]]; then
-        log "Module ${module_name} missing composer.json; marking for repair."
-        module_needs_repair=1
-      elif ! find "${full_path}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
-        log "Module ${module_name} directory is empty; marking for repair."
-        module_needs_repair=1
-      fi
-    else
+    if [[ -n "${dir_owner}" && "${dir_owner}" != "${www_uid}:${www_gid}" ]]; then
+      repair_reason="incorrect ownership (${dir_owner} != ${www_uid}:${www_gid})"
+      module_needs_repair=1
+    elif [[ ! -f "${full_path}/composer.json" ]]; then
+      repair_reason="missing composer.json"
+      module_needs_repair=1
+    elif ! ls "${full_path}"/*.info.yml >/dev/null 2>&1; then
+      repair_reason="missing .info.yml file"
+      module_needs_repair=1
+    elif ! find "${full_path}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+      repair_reason="empty directory"
       module_needs_repair=1
     fi
     
     if [[ "${module_needs_repair}" -eq 1 ]]; then
-      needs_repair=1
+      log "Module ${module_name} needs repair: ${repair_reason}"
       modules_needing_repair+=("${module_name}:${full_path}")
+    else
+      log "Module ${module_name} looks healthy (ownership=${dir_owner})."
     fi
   done < <(echo "${modules_to_repair}")
 
   # If no modules need repair, exit early
-  if [[ "${needs_repair}" -eq 0 ]]; then
+  if [[ ${#modules_needing_repair[@]} -eq 0 ]]; then
     log "All configured modules look healthy; skipping module repair."
     return 0
   fi
@@ -241,6 +251,9 @@ main() {
     log "After-start for ${AFTER_START_VERSION} already complete, exiting."
     exit 0
   fi
+
+  # Clean up old version marker files to ensure fresh runs on upgrades
+  rm -f /tmp/after-start-*.complete 2>/dev/null || true
 
   log "Starting after-start tasks for ${AFTER_START_VERSION}..."
 
