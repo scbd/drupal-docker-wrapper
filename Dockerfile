@@ -7,11 +7,13 @@ WORKDIR /opt/drupal
 
 # System packages (keep minimal) - cache apt metadata
 # gosu is needed for dropping privileges in entrypoint
+# jq is needed for parsing module-repair-list.json in after-start.sh
+# nano is a text editor for debugging inside the container
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt \
     set -eux; \
     apt-get update -y; \
-    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu; \
+    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano; \
     rm -rf /var/lib/apt/lists/*
 
 # Copy local patches into the image so composer-patches can use them
