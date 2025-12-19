@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.3.0-php8.4 AS base-core
+FROM drupal:11.3.1-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
