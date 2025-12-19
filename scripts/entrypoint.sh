@@ -17,13 +17,10 @@ main() {
   # Apply any available patches (if present); otherwise this is a no-op
   apply_patches_if_present
 
-  # After-start script DISABLED - was removing module files unexpectedly
-  # TODO: Re-enable once module repair logic is fixed
   # Fork the after-start script to run 60 seconds after Apache starts
   # This handles: module reinstall, cleanup, permissions, cache rebuild
-  # log "Scheduling after-start script to run in 60 seconds..."
-  # (sleep 60 && /usr/local/bin/after-start.sh >> /proc/1/fd/1 2>&1) &
-  log "After-start script is DISABLED"
+  log "Scheduling after-start script to run in 60 seconds..."
+  (sleep 60 && /usr/local/bin/after-start.sh >> /proc/1/fd/1 2>&1) &
 
   # Chain to the upstream Drupal entrypoint if present
   # Note: Apache must start as root to open logs and bind to port 80,

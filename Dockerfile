@@ -16,6 +16,25 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano; \
     rm -rf /var/lib/apt/lists/*
 
+# Rebuild GD extension with AVIF support (Drupal 11 expects it)
+# hadolint ignore=DL3008
+RUN --mount=type=cache,target=/var/cache/apt \
+    set -eux; \
+    apt-get update -y; \
+    apt-get install --no-install-recommends -y \
+        libavif-dev \
+        libfreetype6-dev \
+        libjpeg62-turbo-dev \
+        libpng-dev \
+        libwebp-dev; \
+    docker-php-ext-configure gd \
+        --with-freetype \
+        --with-jpeg \
+        --with-webp \
+        --with-avif; \
+    docker-php-ext-install -j"$(nproc)" gd; \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy local patches into the image so composer-patches can use them
 COPY ./patches/ /opt/drupal/patches/
 
@@ -89,7 +108,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/robotstxt:1.6' \
       'drupal/samlauth:3.12' \
       'drupal/search_api:1.40' \
-      'drupal/symfony_mailer:1.6' \
+      'drupal/symfony_mailer:1.6.2' \
       'drupal/token:1.16' \
       --with-all-dependencies \
       --no-interaction \
