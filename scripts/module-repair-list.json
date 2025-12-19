@@ -1,15 +1,19 @@
 {
-  "version": "11.3.0",
   "modules": [
-    {
-      "name": "linkit",
-      "path": "web/modules/contrib/linkit",
-      "reason": "Module upgrade may leave stale directory from volume mount"
-    },
     {
       "name": "ckeditor5_icons",
       "path": "web/modules/contrib/ckeditor5_icons",
-      "reason": "Module upgraded from 1.2.1 to 1.2.2"
+      "reason": "Module upgraded - needs reinstall if stale"
+    },
+    {
+      "name": "linkit",
+      "path": "web/modules/contrib/linkit",
+      "reason": "Module upgraded - needs reinstall if stale"
+    },
+    {
+      "name": "samlauth",
+      "path": "web/modules/contrib/samlauth",
+      "reason": "Module upgraded - needs reinstall if stale"
     }
   ]
 }

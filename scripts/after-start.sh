@@ -40,15 +40,6 @@ repair_composer_managed_modules() {
     return 0
   fi
 
-  local repair_version
-  repair_version=$(jq -r '.version // empty' "${module_list_file}" 2>/dev/null || echo "")
-  
-  # Verify version matches to ensure we're running the right repair list
-  if [[ -n "${repair_version}" && "${repair_version}" != "${AFTER_START_VERSION}" ]]; then
-    log "Module repair list version (${repair_version}) does not match script version (${AFTER_START_VERSION}); skipping."
-    return 0
-  fi
-
   local modules_to_repair
   modules_to_repair=$(jq -c '.modules[]' "${module_list_file}" 2>/dev/null || echo "")
   

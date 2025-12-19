@@ -126,8 +126,9 @@ RUN set -eux; \
     ln -s /opt/drupal/web /var/www/html; \
     chown -R www-data:www-data /opt/drupal
 
-# Copy entrypoint wrapper, after-start script, and lib helpers
+# Copy entrypoint wrapper, after-start script, lib helpers, and module repair list
 COPY --chown=www-data:www-data ./scripts/*.sh /usr/local/bin/
+COPY --chown=www-data:www-data ./scripts/*.json /usr/local/bin/
 COPY --chown=www-data:www-data ./scripts/lib/ /usr/local/bin/lib/
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/after-start.sh
 
