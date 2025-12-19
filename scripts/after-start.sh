@@ -21,35 +21,41 @@ else
 fi
 MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
 
-# Generic module repair for contrib modules that may have stale directories
-# Reads from module-repair-list.json to determine which modules need checking
-# - If an old module directory is present (commonly from a dev volume mount)
-#   move it aside to a temp location
-# - Run `composer install` to restore module directories based on composer.lock
+# Generic module repair for ALL contrib modules
+# Automatically checks every module in web/modules/contrib/ directory
+# - Compares each module's version against composer.lock to detect mismatches
+# - If module is stale, out of date, or has wrong ownership, move it aside
+# - Run `composer install` to restore modules from composer.lock
 # - Cleanup temp backup and fix ownership/permissions
 repair_composer_managed_modules() {
   local project_root
   project_root="$(find_project_root)" || return 0
 
-  local module_list_file="${SCRIPT_DIR}/module-repair-list.json"
+  local contrib_dir="${project_root}/web/modules/contrib"
+  local composer_lock="${project_root}/composer.lock"
   
-  # Check if module repair list exists
-  if [[ ! -f "${module_list_file}" ]]; then
-    log "Module repair list not found at ${module_list_file}; skipping module repair."
+  # Check if contrib directory exists
+  if [[ ! -d "${contrib_dir}" ]]; then
+    log "Contrib modules directory not found at ${contrib_dir}; skipping module repair."
     return 0
   fi
 
-  # Check if jq is available for JSON parsing
+  # Check if jq is available (needed for version comparison)
   if ! command -v jq >/dev/null 2>&1; then
-    log "jq not available; skipping module repair."
+    log "jq not available; skipping module repair (cannot parse composer.lock)."
     return 0
   fi
 
-  local modules_to_repair
-  modules_to_repair=$(jq -c '.modules[]' "${module_list_file}" 2>/dev/null || echo "")
-  
-  if [[ -z "${modules_to_repair}" ]]; then
-    log "No modules configured for repair; skipping."
+  # Check if composer.lock exists (source of truth for expected versions)
+  if [[ ! -f "${composer_lock}" ]]; then
+    log "composer.lock not found at ${composer_lock}; skipping module repair."
+    return 0
+  fi
+
+  # Check if module repair is disabled (useful for dev environments)
+  local skip_repair="${DRUPAL_SKIP_MODULE_REPAIR:-0}"
+  if [[ "${skip_repair}" == "1" ]]; then
+    log "Module repair disabled via DRUPAL_SKIP_MODULE_REPAIR=1; skipping."
     return 0
   fi
 
@@ -60,18 +66,18 @@ repair_composer_managed_modules() {
   www_uid="$(id -u www-data 2>/dev/null || echo 33)"
   www_gid="$(id -g www-data 2>/dev/null || echo 33)"
 
-  log "Checking modules for repair (force_repair=${force_repair}, www-data=${www_uid}:${www_gid})..."
+  log "Checking ALL contrib modules for repair (force_repair=${force_repair}, www-data=${www_uid}:${www_gid})..."
 
-  # Check each module in the list
-  while IFS= read -r module_json; do
-    local module_name module_path module_reason
-    module_name=$(echo "${module_json}" | jq -r '.name // empty')
-    module_path=$(echo "${module_json}" | jq -r '.path // empty')
-    module_reason=$(echo "${module_json}" | jq -r '.reason // "Module upgrade may require repair"')
+  # Iterate through every module in contrib directory
+  while IFS= read -r module_dir; do
+    local module_name
+    module_name=$(basename "${module_dir}")
     
-    [[ -z "${module_name}" || -z "${module_path}" ]] && continue
+    # Skip . and .. and any non-directories
+    [[ "${module_name}" == "." || "${module_name}" == ".." ]] && continue
+    [[ ! -d "${module_dir}" ]] && continue
     
-    local full_path="${project_root}/${module_path}"
+    local full_path="${module_dir}"
     
     log "Checking module ${module_name} at ${full_path}..."
     
@@ -90,37 +96,80 @@ repair_composer_managed_modules() {
     fi
     
     # Heuristics to detect a stale/volume-mounted module directory:
-    # - wrong ownership (common when created by root on host)
-    # - missing composer.json (corrupted install)
-    # - missing .info.yml file (corrupted/incomplete module)
-    # - directory unexpectedly empty
+    # 1. Version mismatch against composer.lock (PRIMARY CHECK)
+    # 2. Wrong ownership on directory or its contents
+    # 3. Missing composer.json (corrupted install)
+    # 4. Missing .info.yml file (corrupted/incomplete module)
+    # 5. Directory unexpectedly empty
     local module_needs_repair=0
     local repair_reason=""
     
-    local dir_owner
-    dir_owner="$(stat -c '%u:%g' "${full_path}" 2>/dev/null || stat -f '%u:%g' "${full_path}" 2>/dev/null || true)"
+    # PRIMARY CHECK: Compare installed version against composer.lock
+    # Get expected version from composer.lock for drupal/${module_name}
+    local expected_version
+    expected_version=$(jq -r --arg name "drupal/${module_name}" \
+      '.packages[] | select(.name == $name) | .version' \
+      "${composer_lock}" 2>/dev/null || echo "")
+    
+    if [[ -n "${expected_version}" ]]; then
+      # Get installed version from module's composer.json
+      local installed_version=""
+      if [[ -f "${full_path}/composer.json" ]]; then
+        installed_version=$(jq -r '.version // empty' "${full_path}/composer.json" 2>/dev/null || echo "")
+      fi
+      
+      # If we couldn't get version from composer.json, try the .info.yml file
+      if [[ -z "${installed_version}" ]]; then
+        local info_file
+        info_file=$(ls "${full_path}"/*.info.yml 2>/dev/null | head -1 || true)
+        if [[ -n "${info_file}" && -f "${info_file}" ]]; then
+          # Extract version from .info.yml (format: version: '1.2.3' or version: 1.2.3)
+          installed_version=$(grep -E "^version:" "${info_file}" 2>/dev/null | sed "s/version:[[:space:]]*['\"]\\?\\([^'\"]*\\)['\"]\\?/\\1/" | tr -d ' ' || true)
+        fi
+      fi
+      
+      # Compare versions (normalize by removing 'v' prefix if present)
+      local expected_normalized="${expected_version#v}"
+      local installed_normalized="${installed_version#v}"
+      
+      if [[ -n "${installed_version}" && "${installed_normalized}" != "${expected_normalized}" ]]; then
+        repair_reason="version mismatch (installed=${installed_version}, expected=${expected_version})"
+        module_needs_repair=1
+      fi
+    fi
+    
+    # Secondary checks only if version check passed
+    if [[ "${module_needs_repair}" -eq 0 ]]; then
+      local dir_owner
+      dir_owner="$(stat -c '%u:%g' "${full_path}" 2>/dev/null || stat -f '%u:%g' "${full_path}" 2>/dev/null || true)"
 
-    if [[ -n "${dir_owner}" && "${dir_owner}" != "${www_uid}:${www_gid}" ]]; then
-      repair_reason="incorrect ownership (${dir_owner} != ${www_uid}:${www_gid})"
-      module_needs_repair=1
-    elif [[ ! -f "${full_path}/composer.json" ]]; then
-      repair_reason="missing composer.json"
-      module_needs_repair=1
-    elif ! ls "${full_path}"/*.info.yml >/dev/null 2>&1; then
-      repair_reason="missing .info.yml file"
-      module_needs_repair=1
-    elif ! find "${full_path}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
-      repair_reason="empty directory"
-      module_needs_repair=1
+      # Check directory ownership
+      if [[ -n "${dir_owner}" && "${dir_owner}" != "${www_uid}:${www_gid}" ]]; then
+        repair_reason="incorrect directory ownership (${dir_owner} != ${www_uid}:${www_gid})"
+        module_needs_repair=1
+      # Check if any files inside have wrong ownership (critical for volume-mounted directories)
+      elif find "${full_path}" -maxdepth 3 ! -user "${www_uid}" -print -quit 2>/dev/null | grep -q .; then
+        repair_reason="files with incorrect ownership found inside module"
+        module_needs_repair=1
+      elif [[ ! -f "${full_path}/composer.json" ]]; then
+        repair_reason="missing composer.json"
+        module_needs_repair=1
+      elif ! ls "${full_path}"/*.info.yml >/dev/null 2>&1; then
+        repair_reason="missing .info.yml file"
+        module_needs_repair=1
+      elif ! find "${full_path}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+        repair_reason="empty directory"
+        module_needs_repair=1
+      fi
     fi
     
     if [[ "${module_needs_repair}" -eq 1 ]]; then
       log "Module ${module_name} needs repair: ${repair_reason}"
       modules_needing_repair+=("${module_name}:${full_path}")
     else
-      log "Module ${module_name} looks healthy (ownership=${dir_owner})."
+      log "Module ${module_name} looks healthy (version OK, ownership=${dir_owner:-unknown})."
     fi
-  done < <(echo "${modules_to_repair}")
+  done < <(find "${contrib_dir}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true)
 
   # If no modules need repair, exit early
   if [[ ${#modules_needing_repair[@]} -eq 0 ]]; then

@@ -7,7 +7,7 @@ WORKDIR /opt/drupal
 
 # System packages (keep minimal) - cache apt metadata
 # gosu is needed for dropping privileges in entrypoint
-# jq is needed for parsing module-repair-list.json in after-start.sh
+# jq is needed for parsing composer.lock in after-start.sh
 # nano is a text editor for debugging inside the container
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt \
@@ -95,7 +95,14 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       --no-interaction \
       --no-progress \
       --optimize-autoloader; \
-    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt
+    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt; \
+    # Generate SHA256 hashes for all contrib modules (used for integrity checking at runtime)
+    find /opt/drupal/web/modules/contrib -mindepth 1 -maxdepth 1 -type d -exec sh -c '\
+      for dir; do \
+        module=$(basename "$dir"); \
+        find "$dir" -type f -name "*.php" -o -name "*.info.yml" -o -name "composer.json" 2>/dev/null | \
+          sort | xargs cat 2>/dev/null | sha256sum | cut -d" " -f1 > "/opt/drupal/web/modules/contrib/.${module}.hash"; \
+      done' _ {} +
 #       'drupal/jsonapi_extras:3.27' \
 
 
@@ -131,9 +138,8 @@ RUN set -eux; \
 # Copy package.json for version tracking
 COPY --chown=www-data:www-data ./package.json /opt/drupal/
 
-# Copy entrypoint wrapper, after-start script, lib helpers, and module repair list
+# Copy entrypoint wrapper, after-start script, and lib helpers
 COPY --chown=www-data:www-data ./scripts/*.sh /usr/local/bin/
-COPY --chown=www-data:www-data ./scripts/*.json /usr/local/bin/
 COPY --chown=www-data:www-data ./scripts/lib/ /usr/local/bin/lib/
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/after-start.sh
 
