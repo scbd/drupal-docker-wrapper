@@ -128,9 +128,29 @@ repair_composer_managed_modules() {
         fi
       fi
       
-      # Compare versions (normalize by removing 'v' prefix if present)
-      local expected_normalized="${expected_version#v}"
-      local installed_normalized="${installed_version#v}"
+      # Normalize versions for comparison:
+      # - Remove 'v' prefix
+      # - Convert Drupal 8.x-Y.Z format to Y.Z.0 (e.g., 8.x-1.6 -> 1.6.0)
+      # - Add .0 patch version if missing (e.g., 1.6 -> 1.6.0)
+      normalize_version() {
+        local ver="$1"
+        # Remove 'v' prefix
+        ver="${ver#v}"
+        # Convert 8.x-Y.Z or 9.x-Y.Z format to Y.Z (Drupal legacy versioning)
+        if [[ "${ver}" =~ ^[0-9]+\.x-(.+)$ ]]; then
+          ver="${BASH_REMATCH[1]}"
+        fi
+        # Add .0 if version has only major.minor (e.g., 1.6 -> 1.6.0)
+        if [[ "${ver}" =~ ^[0-9]+\.[0-9]+$ ]]; then
+          ver="${ver}.0"
+        fi
+        echo "${ver}"
+      }
+      
+      local expected_normalized
+      local installed_normalized
+      expected_normalized=$(normalize_version "${expected_version}")
+      installed_normalized=$(normalize_version "${installed_version}")
       
       if [[ -n "${installed_version}" && "${installed_normalized}" != "${expected_normalized}" ]]; then
         repair_reason="version mismatch (installed=${installed_version}, expected=${expected_version})"
@@ -177,21 +197,23 @@ repair_composer_managed_modules() {
     return 0
   fi
 
-  local backup_root="/tmp/drupal-module-backups/${AFTER_START_VERSION}"
-  
   log "Preparing to repair ${#modules_needing_repair[@]} composer-managed module(s)."
-  mkdir -p "${backup_root}"
 
-  # Move problematic modules aside
+  # Remove problematic modules entirely (composer install will restore them)
+  # Note: We use rm -rf instead of mv because moving across filesystems (EFS to local)
+  # can fail partially, leaving empty directory structures that break composer install
   for module_entry in "${modules_needing_repair[@]}"; do
     local module_name="${module_entry%%:*}"
     local module_full_path="${module_entry#*:}"
-    local backup_dir="${backup_root}/${module_name}"
     
-    if mv "${module_full_path}" "${backup_dir}" 2>/dev/null; then
-      log "Moved ${module_full_path} -> ${backup_dir}"
-    else
-      log "Could not move ${module_full_path} to ${backup_dir}; continuing with composer install."
+    if [[ -d "${module_full_path}" ]]; then
+      log "Removing ${module_full_path} for reinstall..."
+      rm -rf "${module_full_path}" 2>/dev/null || {
+        log "Could not remove ${module_full_path}; trying with find..."
+        # Fallback: remove contents first, then directory (handles cross-filesystem edge cases)
+        find "${module_full_path}" -mindepth 1 -delete 2>/dev/null || true
+        rmdir "${module_full_path}" 2>/dev/null || true
+      }
     fi
   done
 
@@ -206,12 +228,6 @@ repair_composer_managed_modules() {
     --optimize-autoloader \
     --prefer-dist \
     2>&1 || log "Composer install had issues; continuing."
-
-  # Best-effort cleanup of temp backups after composer succeeds.
-  # If composer failed, leaving the backup can help with debugging.
-  if [[ -d "${backup_root}" ]]; then
-    rm -rf "${backup_root}" 2>/dev/null || true
-  fi
 }
 
 # Clean up deprecated paths

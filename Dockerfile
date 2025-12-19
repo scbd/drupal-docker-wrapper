@@ -120,8 +120,11 @@ RUN --mount=type=cache,target=/var/cache/apt \
 FROM with-modules AS final
 WORKDIR /opt/drupal
 
-# Disable deprecated assert.active INI setting (deprecated in PHP 8.3+)
-RUN echo 'zend.assertions=-1' > /usr/local/etc/php/conf.d/zz-disable-assert.ini
+# Disable assertions and suppress the assert.active deprecation warning (PHP 8.3+)
+# - zend.assertions=-1 means assertion code is not generated at all (best for production)
+# - error_reporting excludes E_DEPRECATED to suppress the assert.active startup warning
+#   (The base PHP image has assert.active=On by default, which triggers a deprecation notice)
+RUN printf 'zend.assertions=-1\nerror_reporting=E_ALL & ~E_DEPRECATED\n' > /usr/local/etc/php/conf.d/zz-production.ini
 
 # Expose manifest for quick inspection
 LABEL org.opencontainers.image.title="Drupal 11 Base with Contrib Modules" \
