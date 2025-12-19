@@ -40,6 +40,25 @@ The `after-start.sh` script runs in the background after Apache is healthy:
 3. **Fixes permissions** on sites/files directories
 4. **Rebuilds Drupal cache** (as www-data via gosu)
 
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DRUPAL_SKIP_MODULE_REPAIR` | `0` | Set to `1` to skip module repair in after-start script. |
+| `DRUPAL_AFTER_START_FORCE_MODULE_REPAIR` | `0` | Set to `1` to force module repair even if versions match. |
+
+> **Note:** The after-start script is currently DISABLED. These variables have no effect until re-enabled.
+
+Example usage:
+
+```sh
+# Skip module repair for faster startup
+docker run -d --name drupal -p 8080:80 \
+  -e DRUPAL_SKIP_MODULE_REPAIR=1 \
+  -v drupal-sites:/opt/drupal/web/sites \
+  scbd/drupal-docker-wrapper:VERSION_TAG
+```
+
 This approach ensures:
 
 - Fast container startup (Apache available immediately)
