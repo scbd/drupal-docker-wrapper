@@ -13,7 +13,12 @@ source "${SCRIPT_DIR}/lib/common.sh"
 LOG_PREFIX="after-start"
 
 # Version tag for this release (used only to gate one-time startup tasks)
-AFTER_START_VERSION="11.3.1-v2"
+# Read from package.json if available, otherwise use a default
+if command -v jq >/dev/null 2>&1 && [[ -f "/opt/drupal/package.json" ]]; then
+  AFTER_START_VERSION=$(jq -r '.version' /opt/drupal/package.json 2>/dev/null || echo "unknown")
+else
+  AFTER_START_VERSION="unknown"
+fi
 MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
 
 # Generic module repair for contrib modules that may have stale directories
