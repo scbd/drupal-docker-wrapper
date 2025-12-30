@@ -70,7 +70,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
     set -eux; \
     composer require \
       'drush/drush:13.7.0' \
-      'drupal/admin_toolbar:3.6.2' \
+      'drupal/admin_toolbar:3.6.3' \
       'drupal/administerusersbyrole:3.6.0' \
       'drupal/ant_bulk:2.0.0-rc4' \
       'drupal/auditfiles:4.2.4' \
@@ -106,7 +106,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/redirect:1.12' \
       'drupal/remove_entity_untranslatable_field_validation:1.3' \
       'drupal/robotstxt:1.6' \
-      'drupal/samlauth:3.12' \
+      'drupal/samlauth:3.13' \
       'drupal/search_api:1.40' \
       'drupal/symfony_mailer:1.6.2' \
       'drupal/token:1.16' \
