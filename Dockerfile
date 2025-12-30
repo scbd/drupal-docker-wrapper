@@ -82,13 +82,13 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/ckeditor5_icons:1.2.2' \
       'drupal/ckeditor5_template:1.0.8' \
       'drupal/decoupled_router:2.0.6' \
-      'drupal/devel:5.4.0' \
+      'drupal/devel:5.5.0' \
       'drupal/editor_paste_plain:1.0.0-rc1' \
       'drupal/externalauth:2.0.8' \
       'drupal/facets:3.0.2' \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \
-      'drupal/forum:1.0.2' \
+      'drupal/forum:1.0.4' \
       'drupal/fpa:4.0.1' \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \
