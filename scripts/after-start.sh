@@ -240,7 +240,7 @@ cleanup_deprecated_paths() {
     "modules/contrib/login_destination"
     # "modules/contrib/ckeditor_templates"
     "modules/contrib/ckeditor_templates_ui"
-    "modules/contrib/ctools"
+    # "modules/contrib/ctools"
     "robots.txt"
   )
 
@@ -255,7 +255,8 @@ cleanup_deprecated_paths() {
 }
 
 # Harden permissions on mounted volumes for security
-# Makes code read-only (root:www-data), only sites/*/files writable
+# Makes code read-only (root:www-data), directories 755, files 644
+# Only sites/*/files remain writable by www-data
 harden_mounted_volumes() {
   # Must be root to change ownership
   [[ "$(id -u)" -eq 0 ]] || return 0
@@ -265,21 +266,51 @@ harden_mounted_volumes() {
 
   log "Hardening mounted volume permissions..."
 
-  # Lock down code directories: root-owned, www-data readable (755)
+  # All code directories that should be locked down (root:www-data, read-only)
+  # NOTE: drush directory excluded - it contains site aliases that may be mounted
   local code_paths=(
+    "${project_root}/web/core"
     "${project_root}/web/modules"
-    "${project_root}/web/drush"
-    "/var/www/html/modules"
-    "/var/www/html/drush"
+    "${project_root}/web/themes"
+    "${project_root}/web/profiles"
+    "${project_root}/web/libraries"
+    "${project_root}/vendor"
   )
 
   for code_path in "${code_paths[@]}"; do
     if [[ -d "${code_path}" ]]; then
-      log "Securing ${code_path} (root:www-data, 755)..."
+      log "Securing ${code_path} (root:www-data, dirs=755, files=644)..."
       chown -R root:www-data "${code_path}" 2>/dev/null || true
-      chmod -R 755 "${code_path}" 2>/dev/null || true
+      # Directories: 755 (rwxr-xr-x) - need execute for traversal
+      find "${code_path}" -type d -exec chmod 755 {} + 2>/dev/null || true
+      # Files: 644 (rw-r--r--) - no execute bit
+      find "${code_path}" -type f -exec chmod 644 {} + 2>/dev/null || true
     fi
   done
+
+  # Restore execute permissions on vendor/bin executables (drush, phpunit, etc.)
+  # These are wrapper scripts that call actual executables elsewhere in vendor
+  if [[ -d "${project_root}/vendor/bin" ]]; then
+    log "Restoring execute permissions on vendor/bin..."
+    chmod 755 "${project_root}/vendor/bin"/* 2>/dev/null || true
+  fi
+
+  # Restore execute permissions on actual CLI tools in vendor (drush, etc.)
+  # The vendor/bin wrappers call these actual executables
+  local cli_executables=(
+    "${project_root}/vendor/drush/drush/drush"
+    "${project_root}/vendor/drush/drush/drush.php"
+  )
+  for exe in "${cli_executables[@]}"; do
+    if [[ -f "${exe}" ]]; then
+      chmod 755 "${exe}" 2>/dev/null || true
+    fi
+  done
+
+  # Root-level web files (index.php, update.php, etc.)
+  log "Securing root-level web files (root:www-data, 644)..."
+  find "${project_root}/web" -maxdepth 1 -type f -exec chown root:www-data {} + 2>/dev/null || true
+  find "${project_root}/web" -maxdepth 1 -type f -exec chmod 644 {} + 2>/dev/null || true
 
   # Temp directory: root only, no web server access
   if [[ -d "${project_root}/temp" ]]; then
