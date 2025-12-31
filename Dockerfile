@@ -9,11 +9,12 @@ WORKDIR /opt/drupal
 # gosu is needed for dropping privileges in entrypoint
 # jq is needed for parsing composer.lock in after-start.sh
 # nano is a text editor for debugging inside the container
+# default-mysql-client is needed for database operations and drush sql commands
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt \
     set -eux; \
     apt-get update -y; \
-    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano; \
+    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano default-mysql-client; \
     rm -rf /var/lib/apt/lists/*
 
 # Rebuild GD extension with AVIF support (Drupal 11 expects it)

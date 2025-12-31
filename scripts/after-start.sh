@@ -254,49 +254,86 @@ cleanup_deprecated_paths() {
   done
 }
 
-# Ensure correct permissions on sites/files directories
+# Harden permissions on mounted volumes for security
+# Makes code read-only (root:www-data), only sites/*/files writable
+harden_mounted_volumes() {
+  # Must be root to change ownership
+  [[ "$(id -u)" -eq 0 ]] || return 0
+
+  local project_root
+  project_root="$(find_project_root)" || return 0
+
+  log "Hardening mounted volume permissions..."
+
+  # Lock down code directories: root-owned, www-data readable (755)
+  local code_paths=(
+    "${project_root}/web/modules"
+    "${project_root}/web/drush"
+    "/var/www/html/modules"
+    "/var/www/html/drush"
+  )
+
+  for code_path in "${code_paths[@]}"; do
+    if [[ -d "${code_path}" ]]; then
+      log "Securing ${code_path} (root:www-data, 755)..."
+      chown -R root:www-data "${code_path}" 2>/dev/null || true
+      chmod -R 755 "${code_path}" 2>/dev/null || true
+    fi
+  done
+
+  # Temp directory: root only, no web server access
+  if [[ -d "${project_root}/temp" ]]; then
+    log "Securing ${project_root}/temp (root:root, 700)..."
+    chown -R root:root "${project_root}/temp" 2>/dev/null || true
+    chmod -R 700 "${project_root}/temp" 2>/dev/null || true
+  fi
+
+  # Secure ALL .htaccess files across entire Drupal installation (644, root-owned)
+  # These are critical security files that control access and block PHP execution
+  log "Securing all .htaccess files (root:www-data, 644)..."
+  find "${project_root}" -name ".htaccess" -exec chown root:www-data {} + 2>/dev/null || true
+  find "${project_root}" -name ".htaccess" -exec chmod 644 {} + 2>/dev/null || true
+
+  log "Volume hardening complete."
+}
+
+# Ensure correct permissions on sites directories
+# First locks down entire sites/ (settings.php, etc.), then unlocks only */files
 ensure_sites_files_permissions() {
+  # Must be root to change ownership
+  [[ "$(id -u)" -eq 0 ]] || return 0
+
   local project_root
   project_root="$(find_project_root)" || return 0
 
   local sites_base="${project_root}/web/sites"
+  [[ -d "${sites_base}" ]] || return 0
 
-  # Default site files directory
-  mkdir -p "${sites_base}/default/files"
-  chmod -R 775 "${sites_base}/default/files" 2>/dev/null || true
-  chown -R www-data:www-data "${sites_base}/default/files" 2>/dev/null || true
+  log "Locking down sites directory (root:www-data, 755)..."
+  # First: lock down entire sites directory (settings.php, site configs, etc.)
+  chown -R root:www-data "${sites_base}" 2>/dev/null || true
+  chmod -R 755 "${sites_base}" 2>/dev/null || true
 
-  # Multisite files directories from sites.php if present
-  if [[ -f "${sites_base}/sites.php" ]]; then
-    DRUPAL_SITES_FILE="${sites_base}/sites.php" php -r '$sites = []; include getenv("DRUPAL_SITES_FILE"); foreach (array_unique(array_values($sites)) as $dir) { echo $dir . PHP_EOL; }' \
-      | while read -r site_dir; do
-          [[ -z "${site_dir}" ]] && continue
-          mkdir -p "${sites_base}/${site_dir}/files"
-          chmod -R 775 "${sites_base}/${site_dir}/files" 2>/dev/null || true
-          chown -R www-data:www-data "${sites_base}/${site_dir}/files" 2>/dev/null || true
-        done
-  fi
-}
-
-# Best-effort ownership fixups for paths commonly mounted as volumes.
-ensure_runtime_ownership() {
-  local project_root
-  project_root="$(find_project_root)" || return 0
-
-  local paths=(
-    "${project_root}/web/sites"
-    "${project_root}/web/modules"
-    "${project_root}/vendor"
-    "/var/www/.composer"
-  )
-
-  local p
-  for p in "${paths[@]}"; do
-    if [[ -e "${p}" ]]; then
-      chown -R www-data:www-data "${p}" 2>/dev/null || true
-    fi
+  log "Unlocking sites/*/files directories for uploads (www-data:www-data, 775)..."
+  # Then: unlock only */files directories for web server uploads
+  # Use glob to handle multisite - much faster than parsing sites.php
+  for files_dir in "${sites_base}"/*/files; do
+    [[ -d "${files_dir}" ]] || continue
+    chown -R www-data:www-data "${files_dir}" 2>/dev/null || true
+    chmod -R 775 "${files_dir}" 2>/dev/null || true
   done
+
+  # Ensure default/files exists
+  mkdir -p "${sites_base}/default/files"
+  chown -R www-data:www-data "${sites_base}/default/files" 2>/dev/null || true
+  chmod -R 775 "${sites_base}/default/files" 2>/dev/null || true
+
+  log "Sites permissions configured."
 }
+
+# NOTE: ensure_runtime_ownership() removed for security
+# Code should be root:www-data (read-only), not www-data:www-data (writable)
+# Only sites/*/files directories should be writable by www-data
 
 # Rebuild Drupal cache
 rebuild_cache() {
@@ -333,9 +370,14 @@ main() {
   # 2. Cleanup deprecated paths
   cleanup_deprecated_paths
 
-  # 3. Fix permissions on sites/files and common mounted dirs
-  ensure_sites_files_permissions
-  ensure_runtime_ownership
+  # 3. Harden permissions in background (non-blocking for large multisites)
+  # 775 on files/ is fine - Apache serves JS/CSS/images as static, execute bit irrelevant
+  # Real PHP security is .htaccess blocking execution in files/ directories
+  (
+    harden_mounted_volumes
+    ensure_sites_files_permissions
+    log "Background permission hardening complete."
+  ) &
 
   # 4. Rebuild cache (runs as www-data via gosu)
   rebuild_cache
