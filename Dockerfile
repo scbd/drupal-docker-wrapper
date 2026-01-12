@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.3.1-php8.4 AS base-core
+FROM drupal:11.3.2-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -16,6 +16,14 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update -y; \
     apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano default-mysql-client; \
     rm -rf /var/lib/apt/lists/*
+
+# Install AWS CLI v2
+RUN set -eux; \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; \
+    unzip awscliv2.zip; \
+    ./aws/install; \
+    rm -rf aws awscliv2.zip; \
+    aws --version
 
 # Rebuild GD extension with AVIF support (Drupal 11 expects it)
 # hadolint ignore=DL3008
@@ -94,7 +102,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \
       'drupal/jsonapi_include:2.0.0' \
-      'drupal/jsonapi_resources:1.3' \
+      'drupal/jsonapi_resources:1.4' \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/jsonapi_site:1.0.2' \
       'drupal/key_auth:2.2.0' \
@@ -110,7 +118,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/samlauth:3.13' \
       'drupal/search_api:1.40' \
       'drupal/symfony_mailer:1.6.2' \
-      'drupal/token:1.16' \
+      'drupal/token:1.17' \
       --with-all-dependencies \
       --no-interaction \
       --no-progress \
