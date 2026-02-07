@@ -14,7 +14,7 @@ WORKDIR /opt/drupal
 RUN --mount=type=cache,target=/var/cache/apt \
     set -eux; \
     apt-get update -y; \
-    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano default-mysql-client; \
+    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano default-mysql-client rsync; \
     rm -rf /var/lib/apt/lists/*
 
 # Install AWS CLI v2
