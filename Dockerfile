@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.3.2-php8.4 AS base-core
+FROM drupal:11.3.3-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -22,8 +22,7 @@ RUN set -eux; \
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; \
     unzip awscliv2.zip; \
     ./aws/install; \
-    rm -rf aws awscliv2.zip; \
-    aws --version
+    rm -rf aws awscliv2.zip
 
 # Rebuild GD extension with AVIF support (Drupal 11 expects it)
 # hadolint ignore=DL3008
@@ -84,7 +83,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/ant_bulk:2.0.0-rc4' \
       'drupal/auditfiles:4.2.4' \
       'drupal/auto_node_translate:3.0.2' \
-      'drupal/auto_node_translate_amazon:1.0.0-rc1' \
+      'drupal/auto_node_translate_amazon:1.0.0' \
       'drupal/auto_node_translate_deepl:1.0.0' \
       'drupal/ckeditor_bs_grid:2.0.12' \
       'drupal/ckeditor5_fullscreen:1.0' \
@@ -93,11 +92,11 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/decoupled_router:2.0.6' \
       'drupal/devel:5.5.0' \
       'drupal/editor_paste_plain:1.0.0-rc1' \
-      'drupal/externalauth:2.0.8' \
+      'drupal/externalauth:2.0.9' \
       'drupal/facets:3.0.2' \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \
-      'drupal/forum:1.0.4' \
+      'drupal/forum:1.0.5' \
       'drupal/fpa:4.0.1' \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \

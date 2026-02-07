@@ -23,7 +23,13 @@ else
   if [ ! -S /var/run/docker.sock ]; then
     echo "[lint] hadolint not found and docker socket missing; downloading binary"
     HD_VERSION="2.12.0"
-    curl -sSL -o /tmp/hadolint "https://github.com/hadolint/hadolint/releases/download/v${HD_VERSION}/hadolint-Linux-x86_64" && \
+    case "$(uname -s)-$(uname -m)" in
+      Darwin-arm64) HD_PLATFORM="Darwin-x86_64" ;;  # Rosetta-compatible
+      Darwin-*)     HD_PLATFORM="Darwin-x86_64" ;;
+      Linux-aarch64) HD_PLATFORM="Linux-arm64" ;;
+      *)            HD_PLATFORM="Linux-x86_64" ;;
+    esac
+    curl -sSL -o /tmp/hadolint "https://github.com/hadolint/hadolint/releases/download/v${HD_VERSION}/hadolint-${HD_PLATFORM}" && \
       chmod +x /tmp/hadolint || { echo "[lint] Failed to download hadolint" >&2; exit 1; }
     run_hadolint() { /tmp/hadolint "$@"; }
   else
