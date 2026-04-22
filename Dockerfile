@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.3.3-php8.4 AS base-core
+FROM drupal:11.3.8-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -85,14 +85,14 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/auto_node_translate:3.0.2' \
       'drupal/auto_node_translate_amazon:1.0.0' \
       'drupal/auto_node_translate_deepl:1.0.0' \
-      'drupal/ckeditor_bs_grid:2.0.12' \
+      'drupal/ckeditor_bs_grid:2.1.0' \
       'drupal/ckeditor5_fullscreen:1.0' \
       'drupal/ckeditor5_icons:1.2.2' \
       'drupal/ckeditor5_template:1.0.8' \
       'drupal/decoupled_router:2.0.6' \
       'drupal/devel:5.5.0' \
       'drupal/editor_paste_plain:1.0.0-rc1' \
-      'drupal/externalauth:2.0.9' \
+      'drupal/externalauth:2.0.11' \
       'drupal/facets:3.0.2' \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \
@@ -105,10 +105,10 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/jsonapi_site:1.0.2' \
       'drupal/key_auth:2.2.0' \
-      'drupal/linkit:7.0.12' \
+      'drupal/linkit:7.0.13' \
       'drupal/mailsystem:4.5' \
       'drupal/menu_admin_per_menu:1.7' \
-      'drupal/menu_link_attributes:1.6' \
+      'drupal/menu_link_attributes:1.7' \
       'drupal/pathauto:1.14' \
       'drupal/quick_node_clone:1.22' \
       'drupal/redirect:1.12' \

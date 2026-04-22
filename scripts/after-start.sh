@@ -396,7 +396,9 @@ main() {
   log "Starting after-start tasks for ${AFTER_START_VERSION}..."
 
   # 1. Repair composer-managed modules (one-time; runs composer install as www-data)
-  # repair_composer_managed_modules
+  #    Detects version mismatches against composer.lock, removes stale module
+  #    directories, and runs `composer install` to restore the pinned versions.
+  repair_composer_managed_modules
 
   # 2. Cleanup deprecated paths
   cleanup_deprecated_paths
