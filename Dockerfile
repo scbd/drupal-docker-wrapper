@@ -96,7 +96,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/facets:3.0.2' \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \
-      'drupal/forum:1.0.5' \
+      'drupal/forum:1.0.6' \
       'drupal/fpa:4.0.1' \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \
