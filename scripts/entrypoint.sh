@@ -19,8 +19,8 @@ main() {
 
   # Fork the after-start script to run 60 seconds after Apache starts
   # This handles: module reinstall, cleanup, permissions, cache rebuild
-  #log "Scheduling after-start script to run in 60 seconds..."
-  #(sleep 60 && /usr/local/bin/after-start.sh >> /proc/1/fd/1 2>&1) &
+  log "Scheduling after-start script to run in 60 seconds..."
+  (sleep 60 && /usr/local/bin/after-start.sh >> /proc/1/fd/1 2>&1) &
 
   # Chain to the upstream Drupal entrypoint if present
   # Note: Apache must start as root to open logs and bind to port 80,

@@ -237,10 +237,6 @@ cleanup_deprecated_paths() {
 
   local web_root="${project_root}/web"
   local paths=(
-    "modules/contrib/login_destination"
-    # "modules/contrib/ckeditor_templates"
-    "modules/contrib/ckeditor_templates_ui"
-    # "modules/contrib/ctools"
     "robots.txt"
   )
 
