@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.3.8-php8.4 AS base-core
+FROM drupal:11.3.11-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -93,7 +93,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/devel:5.5.0' \
       'drupal/editor_paste_plain:1.0.0-rc1' \
       'drupal/externalauth:2.0.11' \
-      'drupal/facets:3.0.2' \
+      'drupal/facets:3.0.3' \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \
       'drupal/forum:1.0.6' \
@@ -101,21 +101,21 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \
       'drupal/jsonapi_include:2.0.0' \
-      'drupal/jsonapi_resources:1.4' \
+      'drupal/jsonapi_resources:1.6' \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/jsonapi_site:1.0.2' \
       'drupal/key_auth:2.2.0' \
-      'drupal/linkit:7.0.13' \
+      'drupal/linkit:7.0.15' \
       'drupal/mailsystem:4.5' \
       'drupal/menu_admin_per_menu:1.7' \
       'drupal/menu_link_attributes:1.7' \
-      'drupal/pathauto:1.14' \
+      'drupal/pathauto:1.15' \
       'drupal/quick_node_clone:1.22' \
-      'drupal/redirect:1.12' \
+      'drupal/redirect:1.13' \
       'drupal/remove_entity_untranslatable_field_validation:1.3' \
       'drupal/robotstxt:1.6' \
-      'drupal/samlauth:3.13' \
-      'drupal/search_api:1.40' \
+      'drupal/samlauth:3.14' \
+      'drupal/search_api:1.41' \
       'drupal/symfony_mailer:1.6.2' \
       'drupal/token:1.17' \
       --with-all-dependencies \
