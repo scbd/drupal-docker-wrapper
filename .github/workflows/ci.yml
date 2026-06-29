@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: scbd/drupal-docker-wrapper
+  NODE_VERSION: '20'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Run lint script
+        run: |
+          chmod +x ci/lint.sh
+          ci/lint.sh
+
+  build-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build Drupal 11 image
+        run: |
+          TAG="${GITHUB_SHA::12}"
+          docker build -t "$IMAGE_NAME:11-ci-$TAG" .
+
+      - name: Smoke test Drupal 11 image
+        run: |
+          chmod +x ci/smoke-test.sh || true
+          TAG="$IMAGE_NAME:11-ci-${GITHUB_SHA::12}"
+          bash ci/smoke-test.sh "$TAG"
+
+  # Release publishing is disabled. To enable tag-based releases to Docker Hub:
+  #   1. Set the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets.
+  #   2. Uncomment the push-images job below.
+  # Publish a GitHub Release whose tag is the version (e.g. 11.3.11, Drupal 11 only)
+  # to trigger it. Until then, releases still build and smoke-test but do not push.
+  #
+  # push-images:
+  #   needs: build-test
+  #   if: github.event_name == 'release'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+  #       with:
+  #         persist-credentials: false
+  #
+  #     - name: Docker login
+  #       env:
+  #         DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+  #       run: echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+  #
+  #     - name: Build and tag release images
+  #       env:
+  #         VERSION: ${{ github.event.release.tag_name }}
+  #       run: |
+  #         # Expect tags like 11.2.3-v1 (Drupal 11 only)
+  #         MAJOR_PREFIX=${VERSION%%.*} # 11
+  #         echo "Building release images for $VERSION (major $MAJOR_PREFIX)"
+  #         if [[ $MAJOR_PREFIX == 11* ]]; then
+  #           docker build --platform linux/amd64 -t "$IMAGE_NAME:$VERSION" .
+  #           docker tag "$IMAGE_NAME:$VERSION" "$IMAGE_NAME:latest-11"
+  #         else
+  #           echo "Unknown or unsupported major prefix: $MAJOR_PREFIX (expected 11.x)"; exit 1
+  #         fi
+  #
+  #     - name: Push images
+  #       env:
+  #         VERSION: ${{ github.event.release.tag_name }}
+  #       run: |
+  #         docker push "$IMAGE_NAME:$VERSION"
+  #         docker push "$IMAGE_NAME:latest-11"

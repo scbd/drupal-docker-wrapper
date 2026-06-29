@@ -6,7 +6,9 @@
 .cache
 dist
 .gemini
-.github
+# .github holds local AI tooling (prompts/instructions); keep CI workflows tracked
+.github/*
+!.github/workflows/
 # Node dependencies
 node_modules
 
@@ -26,3 +28,9 @@ logs
 efs
 server/efs
 .opt
+.vscode
+.github/prompts*
+.github/instructions*
+!.github/instructions/workflow.md
+graphify-out
+docs/.temp

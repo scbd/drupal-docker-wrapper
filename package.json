@@ -1,0 +1,19 @@
+{
+  "name": "drupal-docker-wrapper",
+  "version": "11.3.12",
+  "private": true,
+  "scripts": {
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules",
+    "lint:md:fix": "markdownlint '**/*.md' --ignore node_modules --fix",
+    "lint:docker": "hadolint Dockerfile || (echo 'Hadolint issues' && exit 1)",
+    "lint": "npm run lint:md && npm run lint:docker",
+    "lint:fix": "npm run lint:md:fix",
+    "test": "./ci/test-ci-locally.sh"
+  },
+  "devDependencies": {
+    "dotenv": "17.2.3",
+    "markdownlint": "0.33.0",
+    "markdownlint-cli": "0.41.0"
+  },
+  "packageManager": "yarn@4.5.0+sha512.837566d24eec14ec0f5f1411adb544e892b3454255e61fdef8fd05f3429480102806bac7446bc9daff3896b01ae4b62d00096c7e989f1596f2af10b927532f39"
+}
