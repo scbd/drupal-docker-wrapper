@@ -125,7 +125,7 @@ bioland-head Nuxt frontend layer onto it without being part of it.
 - **Versioning tracks Drupal core.** The image version (in `package.json` and the git tag) is the
   core version, with a `-vN` suffix only for a later wrapper iteration on the same core.
 - **Temporary advisory ignores (BL-695).** Three guzzle/psr7 advisories are suppressed in
-  `base-core` so the Critical Drupal 11.3.12 core fix can build before patched releases land in
+  `base-core` so the Critical Drupal 11.4.1 core fix can build before patched releases land in
   core's ranges; documented inline to be removed (Drupal #3599842).
 
 ## Testing Decisions

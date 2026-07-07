@@ -58,7 +58,7 @@ jobs:
   # Release publishing is disabled. To enable tag-based releases to Docker Hub:
   #   1. Set the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets.
   #   2. Uncomment the push-images job below.
-  # Publish a GitHub Release whose tag is the version (e.g. 11.3.11, Drupal 11 only)
+  # Publish a GitHub Release whose tag is the version (e.g. 11.x.x, Drupal 11 only)
   # to trigger it. Until then, releases still build and smoke-test but do not push.
   #
   # push-images:

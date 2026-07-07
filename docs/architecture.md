@@ -103,7 +103,7 @@ stage means a module bump invalidates only that layer's cache, not core.
 ```mermaid
 flowchart LR
   subgraph base [base-core]
-    b1[FROM drupal:11.3.12-php8.4]
+    b1[FROM drupal:11.4.1-php8.4]
     b2[System packages:<br/>curl, gosu, jq, nano,<br/>mysql client, rsync, unzip]
     b3[AWS CLI v2]
     b4[Rebuild GD with AVIF]
@@ -135,7 +135,7 @@ Two details that surprise readers and are deliberate:
   because patches must be wired before any patched package is pulled.
 - The `base-core` stage ignores three guzzle/psr7 security advisories
   (`PKSA-93qv-9n9h-6k6p`, `PKSA-k22t-f949-t9g6`, `PKSA-7qs6-zvnz-h66r`). This is a temporary BL-695
-  measure so the Critical Drupal core fix in 11.3.12 can build before patched guzzle/psr7 releases
+  measure so the Critical Drupal core fix in 11.4.1 can build before patched guzzle/psr7 releases
   exist in core's pinned ranges. It tracks Drupal issue #3599842 and is meant to be removed.
 
 ### 4.2 Startup scripts

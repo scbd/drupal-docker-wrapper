@@ -220,6 +220,15 @@ repair_composer_managed_modules() {
   log "Running composer install to ensure module tree matches composer.lock..."
   cd "${project_root}" || return 0
 
+  # Prevent the drupal/core-composer-scaffold plugin from (re)creating robots.txt
+  # on this and every future composer install. Deleting the file after the fact is
+  # a losing race because scaffolding runs on each install; disabling the mapping is
+  # the durable fix. Setting the value to false tells scaffold to skip that path.
+  log "Disabling robots.txt scaffolding via composer config..."
+  gosu www-data composer config --json \
+    'extra.drupal-scaffold.file-mapping.[web-root]/robots.txt' false \
+    2>&1 || log "Could not set drupal-scaffold robots.txt mapping; continuing."
+
   # Run as www-data to keep permissions sane.
   # Note: We intentionally use install (not require) to avoid mutating composer.json/lock at runtime.
   gosu www-data composer install \

@@ -3,14 +3,14 @@
 > is the truth about the code and this plan is the truth about intent. The overlap between the two is
 > deliberate provenance, not duplication.
 >
-> Part of the [Bioland](bioland.md) architectural plan. The cross-project hub (System Overview,
+> Part of the [Bioland](#) architectural plan. The cross-project hub (System Overview,
 > Actors, Workflow Statuses, End-to-End Flows, Verification, Deferred Items) is the
-> [hub](bioland.md); glossary: [CONTEXT.md](CONTEXT.md); context map:
+> [hub](#); glossary: [CONTEXT.md](CONTEXT.md); context map:
 > [CONTEXT-MAP.md](CONTEXT-MAP.md). This doc owns the **Drupal Docker Wrapper** (Docker / Bash /
-> Composer) work. Sibling spokes: [Bioland Head](bioland/bioland-head.md),
-> [Drupal Module Bioland](bioland/drupal-module-bioland.md),
-> [Drupal Module SCBD Thesaurus Tags](bioland/drupal-module-scbd-thesaurus-tags.md),
-> [Drupal Module SCBD Field JS](bioland/drupal-module-scbd-field-js.md).
+> Composer) work. Sibling spokes: [Bioland Head](#),
+> [Drupal Module Bioland](#),
+> [Drupal Module SCBD Thesaurus Tags](#),
+> [Drupal Module SCBD Field JS](#).
 
 # Bioland: Drupal Docker Wrapper — Architectural Plan
 
@@ -26,7 +26,7 @@ image.
 This project is the hub repo for the Bioland architectural plan. Its design documents (this file,
 [architecture.md](architecture.md), [prd.md](prd.md), [CONTEXT.md](CONTEXT.md)) are the
 system-of-record for the CMS Runtime bounded context. The cross-project material lives in the
-[Bioland hub](bioland.md).
+[Bioland hub](#).
 
 > Cross-project decisions: [docs/adr/](adr/).
 
@@ -83,8 +83,32 @@ Sections are linked per-item below.*
 
 ### System Context (C4 L1)
 
-*See [architecture.md §2 System Context](architecture.md#2-system-context-c4-l1) for the full
-Mermaid C4Context diagram.*
+```mermaid
+flowchart TB
+  subgraph actors [Actors]
+    dev[Developer<br/>Builds and runs locally]
+    ci[CI / Release<br/>GitHub Actions]
+  end
+  subgraph external [External systems]
+    upstream[[drupal:11.x-php8.4<br/>upstream image]]
+    packagist[[Packagist / drupal.org<br/>Composer sources]]
+    registry[(Docker Hub<br/>published tags)]
+    efs[(EFS runtime<br/>dmsm Swarm bind mounts)]
+    custom[(bioland & scbd_ modules<br/>overlaid at runtime)]
+    head[bioland-head Nuxt<br/>decoupled frontend]
+  end
+
+  wrapper([Drupal Docker Wrapper<br/>scbd/drupal-docker-wrapper])
+
+  dev -->|builds, runs, inspects| wrapper
+  ci -->|builds, lints, smoke-tests, publishes| wrapper
+  wrapper -->|builds FROM| upstream
+  wrapper -->|pins contrib via Composer| packagist
+  wrapper -->|published to| registry
+  efs -->|overlays modules, sites, drush| wrapper
+  custom -->|deployed onto| efs
+  head -->|reads JSON:API| wrapper
+```
 
 The wrapper sits between the upstream `drupal:11.x-php8.4` image and the Packagist/drupal.org
 sources it builds FROM, and the consumers that depend on it at runtime: the dmsm Swarm stacks, the
@@ -93,7 +117,35 @@ JSON:API. Developers and GitHub Actions build and test the image; Docker Hub hol
 
 ### Containers (C4 L2) — what is built in vs. overlaid at runtime
 
-*See [architecture.md §3 Containers](architecture.md#3-containers-c4-l2) for the full flowchart.*
+```mermaid
+flowchart TB
+  subgraph image [Wrapper image: scbd/drupal-docker-wrapper]
+    core[Drupal 11 core + PHP 8.4<br/>from upstream]
+    contrib[Pinned contrib modules<br/>web/modules/contrib]
+    drush[Drush 13 + CLI tools<br/>curl, gosu, jq, patch, git, mysql client, aws cli]
+    manifest[modules-versions.txt<br/>+ per-module integrity hashes]
+    startup[Two-phase startup<br/>entrypoint.sh + after-start.sh + lib/]
+    pkg[package.json<br/>wrapper version]
+  end
+
+  subgraph runtime [Overlaid at runtime via bind mounts]
+    custom[(modules/custom<br/>bioland, scbd_*)]
+    sites[(sites<br/>multisite config + files)]
+    drushcfg[(drush<br/>site aliases)]
+    temp[(temp<br/>checkpoints, backups)]
+    phpini[(custom.ini<br/>PHP overrides)]
+  end
+
+  upstream[[drupal:11.x-php8.4]] --> core
+  composer[[Composer / Packagist]] --> contrib
+  composer --> drush
+  contrib --> manifest
+  custom -. overlays .-> contrib
+  sites -. mounts .-> image
+  drushcfg -. mounts .-> image
+  temp -. mounts .-> image
+  phpini -. mounts .-> image
+```
 
 The image contains four kinds of content:
 
@@ -109,9 +161,6 @@ hard rule: never mount over `vendor/`, `web/core/`, or `web/modules/contrib/`.
 
 ### Key Components (C4 L3)
 
-*See [architecture.md §4 Key Components](architecture.md#4-key-components-c4-l3) for the
-full component flowcharts.*
-
 #### Build stages
 
 The `Dockerfile` is three named stages, each adding one concern:
@@ -122,13 +171,42 @@ The `Dockerfile` is three named stages, each adding one concern:
 | `with-modules` | One consolidated `composer require` of all ~40 pinned modules + Drush; `modules-versions.txt`; per-module integrity hashes | Cache invalidates on any module version bump; isolated from core |
 | `final` | Production PHP ini (`zz-production.ini`), OCI labels, docroot symlink, startup scripts, composer-home writable for www-data, `HEALTHCHECK`, `ENTRYPOINT` | Small, invalidates rarely |
 
+```mermaid
+flowchart LR
+  subgraph base [base-core]
+    b1[FROM drupal:11.4.1-php8.4]
+    b2[System packages:<br/>curl, gosu, jq, nano,<br/>mysql client, rsync, unzip]
+    b3[AWS CLI v2]
+    b4[Rebuild GD with AVIF]
+    b5[COPY patches/ into image]
+    b6[Composer config:<br/>prefer dist, enable patching,<br/>skip robots.txt scaffold,<br/>ignore 3 guzzle advisories]
+  end
+  subgraph mods [with-modules]
+    m1[Install build tools:<br/>git, patch, unzip]
+    m2[Require composer-patches plugin FIRST]
+    m3[Single composer require:<br/>~40 pinned modules + Drush]
+    m4[Write modules-versions.txt]
+    m5[Generate per-module<br/>integrity hashes]
+    m6[Purge unzip]
+  end
+  subgraph fin [final]
+    f1[zz-production.ini:<br/>disable assertions]
+    f2[OCI image labels]
+    f3[Symlink /var/www/html to web]
+    f4[COPY package.json + scripts]
+    f5[Composer home writable<br/>for www-data]
+    f6[HEALTHCHECK + ENTRYPOINT]
+  end
+  base --> mods --> fin
+```
+
 Two deliberate ordering constraints:
 
 - The `cweagans/composer-patches` plugin must be required **before** any patched package, so it is
   a separate `composer require` step at the top of `with-modules`.
 - Three guzzle/psr7 security advisories (`PKSA-93qv-9n9h-6k6p`, `PKSA-k22t-f949-t9g6`,
   `PKSA-7qs6-zvnz-h66r`) are temporarily suppressed in `base-core` for BL-695 so the Critical
-  Drupal 11.3.12 core fix can build before patched releases land in core's dependency ranges.
+  Drupal 11.4.1 core fix can build before patched releases land in core's dependency ranges.
   Remove when Drupal issue #3599842 is resolved.
 
 #### Startup scripts
@@ -196,9 +274,6 @@ is the human-readable manifest of direct dependency versions.
 
 ## Key Flows
 
-*See [architecture.md §5 Key Flows](architecture.md#5-key-flows-sequence-diagrams) for the full
-sequence diagrams. Summaries follow.*
-
 ### Container startup — two-phase
 
 ```mermaid
@@ -257,6 +332,45 @@ sequenceDiagram
 
 ---
 
+## Deployment / Infrastructure
+
+```mermaid
+flowchart LR
+  subgraph ci [CI / Release]
+    cc[GitHub Actions]
+    hub[(Docker Hub<br/>scbd/drupal-docker-wrapper)]
+  end
+  subgraph swarm [dmsm Docker Swarm]
+    svc[drupal service<br/>per multi-site]
+  end
+  subgraph efs [EFS per env/site]
+    mcustom[(modules/custom)]
+    msites[(sites)]
+    mdrush[(drush)]
+    mtemp[(temp)]
+    mphp[(php/custom.ini)]
+  end
+  db[(MySQL)]
+  nuxt[bioland-head Nuxt]
+
+  cc -->|tag build, push job currently off| hub
+  hub --> svc
+  mcustom -. bind mount .-> svc
+  msites -. bind mount .-> svc
+  mdrush -. bind mount .-> svc
+  mtemp -. bind mount .-> svc
+  mphp -. bind mount .-> svc
+  svc --> db
+  nuxt -->|JSON:API| svc
+```
+
+The deployed `drupal` service runs under the dmsm Swarm multi-site stacks (defined outside this
+repo). Today it bind-mounts the whole `modules` tree, which masks the image's contrib; the
+recommended state is to mount only `modules/custom` so contrib and integrity hashes come from the
+image.
+
+---
+
 ## Connectors / Rules
 
 **Upstream / supply chain.**
@@ -292,9 +406,6 @@ not guarantee that after-start succeeded; check `[after-start]` log lines.
 ---
 
 ## Quality Attributes (NFRs)
-
-*See [architecture.md §9 Quality Attributes](architecture.md#9-quality-attributes-nfrs) for the
-full table. Summaries per attribute:*
 
 | Attribute | Target | Design mechanism |
 |---|---|---|
@@ -335,9 +446,8 @@ stateDiagram-v2
   Pending --> Running: no marker (clear stale markers first)
   Running --> Repairing: module repair vs composer.lock
   Repairing --> Cleanup: cleanup deprecated paths
-  Cleanup --> fork_state <<fork>>
-  fork_state --> Hardening: forked, backgrounded (no wait)
-  fork_state --> Rebuilding: drush cache:rebuild
+  Cleanup --> Hardening: forked, backgrounded (no wait)
+  Cleanup --> Rebuilding: drush cache:rebuild
   Rebuilding --> Complete: touch marker
   Hardening --> [*]
   Skipped --> [*]
@@ -368,7 +478,7 @@ markers and re-runs the full sequence.
 | **Volume mask in production** | dmsm / ops | Deployed Swarm stacks still mount the whole `modules` directory, shadowing the image's pinned contrib until the `modules/custom`-only mount is adopted. Until fixed, module repair at startup is doing real work the mount strategy should make unnecessary. Resolution: migrate the Swarm compose files to mount only `modules/custom`. |
 | **Module repair is a heavy runtime fallback** | this repo | With the whole-modules mount, startup can pull packages on a fresh container. Near no-op once the volume mask is fixed. |
 | **Startup patch application is dormant** | this repo | `lib/patches.sh` is complete but the `apply_patches_if_present` call is commented out in `entrypoint.sh`. Re-enable deliberately if a runtime patch is needed. Build-time composer patching is the current active path. |
-| **Temporary advisory ignores (BL-695)** | this repo | Three guzzle/psr7 advisories suppressed to allow the Critical Drupal 11.3.12 build. Must be removed once Drupal issue #3599842 is resolved. Left in place, they will hide real future advisories on those packages. |
+| **Temporary advisory ignores (BL-695)** | this repo | Three guzzle/psr7 advisories suppressed to allow the Critical Drupal 11.4.1 build. Must be removed once Drupal issue #3599842 is resolved. Left in place, they will hide real future advisories on those packages. |
 | **Release publishing is off** | CI / ops | The GitHub Actions `push-images` job is commented out. Tagged releases build and test but do not push to Docker Hub. Re-enable with Docker Hub credentials when ready to publish. |
 | **No scheduled weekly rebuild** | CI | README calls for a weekly rebuild to pick up upstream base-image security patches; the automation is not yet in place. |
 | **No end-to-end test crossing the mount seam** | cross | No automated test verifies that the custom-module overlay + contrib pin produce a working Drupal site end-to-end. The smoke test checks PHP, Drush, and key module directories but not a live page render. |

@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.3.12-php8.4 AS base-core
+FROM drupal:11.4.1-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -96,7 +96,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/auto_node_translate_deepl:1.0.0' \
       'drupal/ckeditor_bs_grid:2.1.0' \
       'drupal/ckeditor5_fullscreen:1.0' \
-      'drupal/ckeditor5_icons:1.2.2' \
+      'drupal/ckeditor5_icons:1.3.0' \
       'drupal/ckeditor5_template:1.0.9' \
       'drupal/decoupled_router:2.0.6' \
       'drupal/devel:5.5.0' \
@@ -106,7 +106,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \
       'drupal/forum:1.0.6' \
-      'drupal/fpa:4.0.1' \
+      'drupal/fpa:4.0.2' \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \
       'drupal/jsonapi_include:2.0.0' \

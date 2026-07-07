@@ -107,6 +107,6 @@ _Avoid_: mount shadow, override.
 
 **Wrapper version**:
 The image's own version, in `package.json` and the release git tag, which tracks the Drupal core
-version it ships. A bare core version (e.g. `11.3.12`) for a core bump; a `-vN` suffix for a later
+version it ships. A bare core version (e.g. `11.4.1`) for a core bump; a `-vN` suffix for a later
 wrapper iteration on the same core (a module bump, script change, or dependency update).
 _Avoid_: image version, release number (be specific: this tracks core, with a wrapper suffix).

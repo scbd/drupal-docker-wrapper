@@ -1,11 +1,11 @@
-> Part of the [Bioland](../bioland.md) architectural plan. The cross-project hub (System Overview,
+> Part of the [Bioland](#) architectural plan. The cross-project hub (System Overview,
 > Actors, Workflow Statuses, End-to-End Flows, Verification, Deferred Items) is the
-> [hub](../bioland.md); glossary: [CONTEXT.md](../CONTEXT.md) (this repo's wrapper context) and the
-> system [CONTEXT-MAP.md](../CONTEXT-MAP.md). This doc owns the **Drupal Docker Wrapper** (Docker /
-> Bash / Composer) work. Sibling spokes: [Bioland Head](bioland-head.md),
-> [Drupal Module Bioland](drupal-module-bioland.md),
-> [Drupal Module SCBD Thesaurus Tags](drupal-module-scbd-thesaurus-tags.md),
-> [Drupal Module SCBD Field JS](drupal-module-scbd-field-js.md).
+> [hub](#); glossary: [CONTEXT.md](CONTEXT.md) (this repo's wrapper context) and the
+> system [CONTEXT-MAP.md](CONTEXT-MAP.md). This doc owns the **Drupal Docker Wrapper** (Docker /
+> Bash / Composer) work. Sibling spokes: [Bioland Head](#),
+> [Drupal Module Bioland](#),
+> [Drupal Module SCBD Thesaurus Tags](#),
+> [Drupal Module SCBD Field JS](#).
 >
 > This spoke's code lives in **this repo** (`scbd/drupal-docker-wrapper`), so its detail also has a
 > single-context home in [architecture.md](../architecture.md), [prd.md](../prd.md), and

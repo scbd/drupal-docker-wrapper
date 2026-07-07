@@ -93,7 +93,7 @@ scripts/
 
 The root `Dockerfile` has three stages:
 
-1. **base-core**: Drupal core (11.3.11/PHP 8.4) + minimal system packages + composer configuration (no contrib modules).
+1. **base-core**: Drupal core (11.x.x/PHP 8.4) + minimal system packages + composer configuration (no contrib modules).
 2. **with-modules**: Installs `cweagans/composer-patches` first, then all modules in a single consolidated
    `composer require` for cache efficiency; writes `modules-versions.txt`.
 3. **final**: Adds labels, healthcheck, entrypoint wrapper, Apache docroot symlink, and permissions.
@@ -178,7 +178,7 @@ image-built code. Never mount `vendor/`, `web/core/`, or `modules/contrib/` over
 
 The image version (in `package.json` and the release git tag) tracks the **Drupal core version** it ships:
 
-- A core bump is released as the **bare core version** — e.g. `11.3.11` — *even when contrib modules are updated
+- A core bump is released as the **bare core version** — e.g. `11.x.x` — *even when contrib modules are updated
   alongside it*, since those module updates ship as part of that core release.
 - A `-vN` suffix is appended **only** for a *subsequent* wrapper iteration on the **same** Drupal core version: a
   contrib module bump, a script change, or a `package.json` / dependency update made **without** moving core. Increment
@@ -186,17 +186,49 @@ The image version (in `package.json` and the release git tag) tracks the **Drupa
 
 | Tag | Meaning |
 |-----|---------|
-| `11.3.11` | Drupal core 11.3.11 (initial wrapper build for this core; module updates included) |
-| `11.3.11-v1` | First wrapper change on top of 11.3.11 (module/script/package update, core unchanged) |
-| `11.3.11-v2` | Second such change, still on core 11.3.11 |
+| `11.x.x` | Drupal core 11.x.x (initial wrapper build for this core; module updates included) |
+| `11.x.x-v1` | First wrapper change on top of 11.x.x (module/script/package update, core unchanged) |
+| `11.x.x-v2` | Second such change, still on core 11.x.x |
 
 Keep `package.json` and `package-lock.json` in sync with this version. The GitHub Actions release job
 derives the published Docker tag from the GitHub Release tag (`github.event.release.tag_name`), so tag
-releases match — e.g. publish a release with tag `11.3.11`.
+releases match — e.g. publish a release with tag `11.x.x`.
+
+## Local development on Apple Silicon (Mac, ARM64)
+
+This image is **`linux/amd64`-only** — it does **not** build natively for `arm64`. The `Dockerfile`
+installs AWS CLI v2 from the hardcoded x86_64 archive (`awscli-exe-linux-x86_64.zip`), and production
+runs on amd64, so a native `arm64` build would ship a wrong-architecture `aws` binary that fails at
+runtime. On an Apple Silicon Mac you build and run the amd64 image under emulation.
+
+**One-time setup (Docker Desktop):**
+
+1. Enable Rosetta for much faster x86_64 emulation: **Settings → General → "Use Rosetta for
+   x86_64/amd64 emulation on Apple Silicon"** (requires macOS 13+ and the VirtioFS file sharing
+   implementation). Without Rosetta, Docker falls back to QEMU, which builds and runs noticeably slower
+   but still works.
+2. (Optional) Make `linux/amd64` the default for every Docker command so you never forget the flag —
+   this is also what makes `./ci/test-ci-locally.sh` (whose `docker build` omits `--platform`) build the
+   correct architecture on Apple Silicon:
+
+   ```sh
+   export DOCKER_DEFAULT_PLATFORM=linux/amd64
+   ```
+
+   Add it to your `~/.zshrc` to persist it across shells.
+
+**Then build and run as below** — every `docker build`/`docker run` for this image must target
+`--platform linux/amd64` on Apple Silicon (already included in the commands that follow). You will see a
+`requested image's platform (linux/amd64) does not match the detected host platform` warning at `run`
+time; that is expected and harmless under emulation.
+
+> The amd64-built image runs fine for local Drupal development (Apache, PHP, Drush, contrib modules).
+> Emulation only costs build/startup speed, not correctness.
 
 ## Quick start (Drupal 11 image)
 
-Replace `VERSION_TAG` (e.g. `11.3.11`, or `11.3.11-v1` for a wrapper iteration — see [Versioning](#versioning)).
+Replace `VERSION_TAG` (e.g. `11.x.x`, or `11.x.x-v1` for a wrapper iteration — see [Versioning](#versioning)).
+On Apple Silicon, see [Local development on Apple Silicon](#local-development-on-apple-silicon-mac-arm64) first.
 
 ```sh
 # Build
@@ -205,7 +237,8 @@ docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:VERSION_TAG .
 # Run (ephemeral code, persistent files — single-container smoke test)
 # In production this image runs under the dmsm Swarm multi-site stack with bind mounts;
 # see "Volume mounts (current state & recommendation)" above.
-docker run -d --name drupal -p 8080:80 \
+# --platform is required on Apple Silicon (omit it on amd64 hosts, or set DOCKER_DEFAULT_PLATFORM).
+docker run -d --platform linux/amd64 --name drupal -p 8080:80 \
   -v drupal-sites:/opt/drupal/web/sites \
   scbd/drupal-docker-wrapper:VERSION_TAG
 
@@ -266,7 +299,7 @@ Repository secrets (Settings → Secrets and variables → Actions):
 - `DOCKERHUB_TOKEN`
 
 Uncomment the `push-images` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) to enable
-release-based publishing. It runs when a GitHub Release is published with a Drupal 11 tag (e.g. `11.3.11`).
+release-based publishing. It runs when a GitHub Release is published with a Drupal 11 tag (e.g. `11.x.x`).
 
 Add an automated scheduled rebuild (weekly) to pick up upstream security patches.
 
