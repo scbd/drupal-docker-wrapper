@@ -34,3 +34,4 @@ server/efs
 !.github/instructions/workflow.md
 graphify-out
 docs/.temp
+backlog.jsonl

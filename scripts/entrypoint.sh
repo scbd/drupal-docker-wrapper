@@ -14,8 +14,11 @@ source "${SCRIPT_DIR}/lib/patches.sh"
 LOG_PREFIX="entrypoint"
 
 main() {
-  # Apply any available patches (if present); otherwise this is a no-op
-  #apply_patches_if_present
+  # Apply any available patches (if present); otherwise this is a no-op.
+  # Runs synchronously before Apache starts so a volume-mounted contrib tree
+  # (which shadows the image's build-time composer-patches) is patched too.
+  # Idempotent: already-applied patches are detected via a reverse dry-run.
+  apply_patches_if_present
 
   # Fork the after-start script to run 60 seconds after Apache starts
   # This handles: module reinstall, cleanup, permissions, cache rebuild

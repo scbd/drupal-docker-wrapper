@@ -27,8 +27,12 @@ The container uses a two-phase startup approach:
 
 The `entrypoint.sh` script runs immediately at container start:
 
-1. **Applies patches** from `/opt/drupal/patches/` — *currently disabled*: the `apply_patches_if_present` call is
-   commented out in `entrypoint.sh`, so image-bundled patches are not auto-applied at startup.
+1. **Applies patches** from `/opt/drupal/patches/` via `apply_patches_if_present`. Each `*.patch` (excluding
+   `patches/old/`) is applied to the base directory it targets — the Drupal root for core/docroot-relative patches, or
+   the matching module/theme under `web/modules/{contrib,custom}` / `web/themes/{contrib,custom}` for module-relative
+   (composer-patches-style) patches. This runs synchronously before Apache starts so a volume-mounted contrib tree —
+   which shadows the image's build-time composer-patches — is still patched. Idempotent: patches already present are
+   detected via a reverse dry-run and skipped (marker: `.<patch-name>.applied` in the patched dir).
 2. Forks the after-start script to run in 60 seconds.
 3. Starts Apache immediately (healthcheck unaffected), chaining to the upstream Drupal entrypoint.
 
@@ -59,8 +63,8 @@ start per image version:
 | `DRUPAL_AFTER_START_FORCE_MODULE_REPAIR` | `0` | Set to `1` to force module repair even if versions match. |
 
 > **Note:** The after-start script **is active** — it is forked by `entrypoint.sh` and these variables take effect.
-> Module repair runs once per container start per image version (marker-gated). Only the *patch-application* step of the
-> entrypoint is currently disabled (commented out) — see Phase 1.
+> Module repair runs once per container start per image version (marker-gated). The entrypoint *patch-application* step
+> (Phase 1) is also active and runs on every start (idempotent).
 
 Example usage:
 

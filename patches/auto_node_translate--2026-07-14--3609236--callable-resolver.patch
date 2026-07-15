@@ -1,0 +1,36 @@
+Fix TypeError from call_user_func() on a "service:method" access callback
+
+The content_translation access callback is defined as the string
+"content_translation.manager:access" (Drupal's service:method callable
+notation). Plain call_user_func() cannot resolve that notation, so it throws
+"TypeError: call_user_func(): Argument #1 ($callback) must be a valid callback,
+function 'content_translation.manager:access' not found or invalid function
+name" on Drupal 11.4.1.
+
+Resolve the definition through the callable_resolver service so the real access
+callback actually runs, and degrade to the per-entity permission check if the
+definition is genuinely unresolvable.
+
+Issue: https://www.drupal.org/project/auto_node_translate/issues/3609236
+
+--- a/src/Access/AutoNodeTranslateAccessCheck.php
++++ b/src/Access/AutoNodeTranslateAccessCheck.php
+@@ -54,7 +54,17 @@
+       $definition = $this->entityTypeManager->getDefinition($entity_type_id);
+       $translation = $definition->get('translation');
+       $access_callback = $translation['content_translation']['access_callback'];
+-      $access = call_user_func($access_callback, $entity);
++      // The access callback is defined as a "service:method" string, which
++      // call_user_func() cannot resolve on its own. Resolve it through the
++      // callable resolver so the real access check runs; fall through to the
++      // permission check below if the definition is not resolvable.
++      try {
++        $callable = \Drupal::service('callable_resolver')->getCallableFromDefinition($access_callback);
++        $access = call_user_func($callable, $entity);
++      }
++      catch (\InvalidArgumentException $e) {
++        $access = AccessResult::neutral();
++      }
+       if ($access->isAllowed()) {
+         return $access;
+       }
