@@ -1,7 +1,7 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.4.2-php8.4 AS base-core
+FROM drupal:11.4.3-php8.4 AS base-core
 
 WORKDIR /opt/drupal
 
@@ -59,8 +59,8 @@ RUN set -eux; \
     composer config preferred-install dist; \
     composer config --json --merge extra.enable-patching true; \
     # composer config --json --merge extra.patches."drupal/jsonapi_extras" '{"Fix for issue 3452036": "patches/jsonapi_extras--2025-06-30--3452036--mr-51.patch"}'; \
-    # auto_node_translate 3.0.2: fix TypeError on service:method access callback (Drupal issue #3609236) \
-    composer config --json --merge extra.patches."drupal/auto_node_translate" '{"Fix call_user_func TypeError on service:method access callback (#3609236)": "patches/auto_node_translate--2026-07-14--3609236--callable-resolver.patch"}'; \
+    # auto_node_translate 3.0.2: fix call_user_func TypeError and restrict the Automatic Translation tab to the module's own permission (Drupal issue #3609236) \
+    composer config --json --merge extra.patches."drupal/auto_node_translate" '{"Restrict Automatic Translation tab to auto translate permission; fixes call_user_func TypeError (#3609236)": "patches/auto_node_translate--2026-07-15--3609236--gate-on-permission.patch"}'; \
     composer config --no-plugins allow-plugins.cweagans/composer-patches true; \
     composer config extra.drupal-scaffold.file-mapping."[web-root]/robots.txt".mode skip; \
     composer config policy.advisories.ignore-id PKSA-93qv-9n9h-6k6p PKSA-k22t-f949-t9g6 PKSA-7qs6-zvnz-h66r
