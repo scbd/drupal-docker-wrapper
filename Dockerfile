@@ -1,7 +1,11 @@
 ###############################################
 # Base Stage: Core + system tools + composer config
 ###############################################
-FROM drupal:11.4.4-php8.4 AS base-core
+FROM drupal:11.4.5-php8.4 AS base-core
+
+# Per-arch apt cache id: multi-platform builds must not share one apt cache
+# (concurrent builds race on /var/cache/apt/archives/lock)
+ARG TARGETARCH
 
 WORKDIR /opt/drupal
 
@@ -11,7 +15,7 @@ WORKDIR /opt/drupal
 # nano is a text editor for debugging inside the container
 # default-mysql-client is needed for database operations and drush sql commands
 # hadolint ignore=DL3008
-RUN --mount=type=cache,target=/var/cache/apt \
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-$TARGETARCH,sharing=locked \
     set -eux; \
     apt-get update -y; \
     apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano default-mysql-client rsync; \
@@ -26,7 +30,7 @@ RUN set -eux; \
 
 # Rebuild GD extension with AVIF support (Drupal 11 expects it)
 # hadolint ignore=DL3008
-RUN --mount=type=cache,target=/var/cache/apt \
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-$TARGETARCH,sharing=locked \
     set -eux; \
     apt-get update -y; \
     apt-get install --no-install-recommends -y \
@@ -69,11 +73,12 @@ RUN set -eux; \
 # Modules Stage: install plugin early, then modules
 ###############################################
 FROM base-core AS with-modules
+ARG TARGETARCH
 WORKDIR /opt/drupal
 
 # Ensure tools required during composer operations are present; purge later
 # hadolint ignore=DL3008
-RUN --mount=type=cache,target=/var/cache/apt \
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-$TARGETARCH,sharing=locked \
     set -eux; \
     apt-get update -y; \
     apt-get install --no-install-recommends -y git patch unzip; \
@@ -103,11 +108,11 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/decoupled_router:2.0.6' \
       'drupal/devel:5.5.0' \
       'drupal/editor_paste_plain:1.0.0-rc1' \
-      'drupal/externalauth:2.0.12' \
-      'drupal/facets:3.0.3' \
+      'drupal/externalauth:2.0.13' \
+      'drupal/facets:3.0.4' \
       'drupal/fontawesome:3.0.0' \
       'drupal/fontawesome_iconpicker:3.0.0' \
-      'drupal/forum:1.0.6' \
+      'drupal/forum:1.1.3' \
       'drupal/fpa:4.0.2' \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \
@@ -115,7 +120,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/jsonapi_resources:1.7' \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/jsonapi_site:1.0.2' \
-      'drupal/key_auth:2.2.0' \
+      'drupal/key_auth:2.2.3' \
       'drupal/linkit:7.0.16' \
       'drupal/mailsystem:4.5' \
       'drupal/menu_admin_per_menu:1.7' \
@@ -146,7 +151,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
 
 # Keep 'patch' and 'git' at runtime so entrypoint and composer operations succeed
 # hadolint ignore=DL3008
-RUN --mount=type=cache,target=/var/cache/apt \
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-$TARGETARCH,sharing=locked \
     set -eux; \
     apt-get purge -y unzip || true; \
     apt-get autoremove -y; \

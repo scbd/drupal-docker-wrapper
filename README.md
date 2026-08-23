@@ -329,10 +329,10 @@ chown -R www-data:www-data /var/www/.composer
 
 ```sh
 # for dev and stg
-docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:${env}-${VERSION_TAG} . --push
+docker build --platform linux/amd64,linux/arm64 -t scbd/drupal-docker-wrapper:${env}-${VERSION_TAG} . --push
 
 #prod
-docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:${VERSION_TAG} -t scbd/drupal-docker-wrapper:latest . --push
+docker build --platform linux/amd64,linux/arm64 -t scbd/drupal-docker-wrapper:${VERSION_TAG} -t scbd/drupal-docker-wrapper:latest . --push
 ```
 
 ## License
@@ -342,3 +342,5 @@ This project: MIT (container build scripts). Drupal & contributed modules: GPL-2
 ---
 
 Refer to the `Dockerfile` for authoritative module version declarations.
+
+sudo docker save scbd/drupal-docker-wrapper:stg-11.4.4-v1 | gzip | ssh ubuntu@us2.staging.infra.cbd.int "gunzip | sudo docker load"
