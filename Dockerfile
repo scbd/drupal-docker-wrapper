@@ -104,8 +104,8 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/ckeditor_bs_grid:2.1.0' \
       'drupal/ckeditor5_fullscreen:1.0' \
       'drupal/ckeditor5_icons:1.3.0' \
-      'drupal/ckeditor5_template:1.0.9' \
-      'drupal/decoupled_router:2.0.6' \
+      'drupal/ckeditor5_template:1.0.10' \
+      'drupal/decoupled_router:2.0.7' \
       'drupal/devel:5.5.0' \
       'drupal/editor_paste_plain:1.0.0-rc1' \
       'drupal/externalauth:2.0.13' \
@@ -117,7 +117,7 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       'drupal/js_cookie:1.0.2' \
       'drupal/jsonapi_extras:3.x-dev@dev' \
       'drupal/jsonapi_include:2.0.0' \
-      'drupal/jsonapi_resources:1.7' \
+      'drupal/jsonapi_resources:1.8' \
       'drupal/jsonapi_search_api:1.0-rc5' \
       'drupal/jsonapi_site:1.0.2' \
       'drupal/key_auth:2.2.3' \
