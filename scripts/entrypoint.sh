@@ -106,9 +106,9 @@ run_after_start_when_ready() {
 }
 
 main() {
-  # Apply any available patches before Apache starts, so a volume-mounted
-  # contrib tree (which shadows the image's build-time composer-patches) is
-  # patched too. Idempotent, and a no-op when the engine or patches are absent.
+  # Apply any available patches before Apache starts, so the bind-mounted
+  # modules/custom tree is patched alongside the image's own baked-in core and
+  # contrib. Idempotent, and a no-op when the engine or patches are absent.
   #
   # A failure here must never stop the container from serving: this is a
   # best-effort step, and `set -e` would otherwise exit before the exec below.
