@@ -28,7 +28,10 @@ LOG_PREFIX="after-start"
 # re-scaffolding the file and shadowing the drupal/robotstxt module.
 cleanup_deprecated_paths() {
   local project_root
-  project_root="$(find_project_root)" || return 0
+  project_root="$(find_project_root)" || {
+    log "Could not locate the project root; skipping deprecated-path cleanup."
+    return 0
+  }
 
   local web_root="${project_root}/web"
   local paths=(
@@ -38,9 +41,13 @@ cleanup_deprecated_paths() {
   local rel
   for rel in "${paths[@]}"; do
     local target="${web_root}/${rel}"
-    if [[ -e "${target}" ]]; then
-      log "Removing deprecated path ${target}"
-      rm -rf "${target}" || log "Failed to remove ${target}; continuing."
+    # rm -f, not rm -rf: every entry above is a regular file, and a recursive
+    # delete driven by an array is the shape ADR 0005 exists to keep out of the
+    # runtime. A future entry that genuinely needs a directory gets its own
+    # explicitly guarded branch.
+    if [[ -f "${target}" ]]; then
+      log "Removing deprecated file ${target}"
+      rm -f "${target}" || log "Failed to remove ${target}; continuing."
     fi
   done
 }
@@ -51,10 +58,16 @@ cleanup_deprecated_paths() {
 # touched here; their permissions are owned by the deploy that mounts them.
 harden_image_code() {
   # Must be root to change ownership
-  [[ "$(id -u)" -eq 0 ]] || return 0
+  [[ "$(id -u)" -eq 0 ]] || {
+    log "Not running as root (uid $(id -u)); skipping image code hardening."
+    return 0
+  }
 
   local project_root
-  project_root="$(find_project_root)" || return 0
+  project_root="$(find_project_root)" || {
+    log "Could not locate the project root; skipping image code hardening."
+    return 0
+  }
 
   log "Hardening image code permissions..."
 
@@ -70,40 +83,54 @@ harden_image_code() {
     "${project_root}/vendor"
   )
 
+  # Failures stay non-fatal - a half-hardened tree must never stop the container
+  # serving - but they are counted and reported. Silently swallowing them would
+  # make "code is still www-data-writable" look identical to a clean run, which
+  # is the one outcome worth knowing about.
+  local code_path
+  local failed_paths=0
   for code_path in "${code_paths[@]}"; do
     if [[ -d "${code_path}" ]]; then
       log "Securing ${code_path} (root:www-data, dirs=755, files=644)..."
-      chown -R root:www-data "${code_path}" 2>/dev/null || true
+      local failed=0
+      chown -R root:www-data "${code_path}" || failed=1
       # Directories: 755 (rwxr-xr-x) - need execute for traversal
-      find "${code_path}" -type d -exec chmod 755 {} + 2>/dev/null || true
+      find "${code_path}" -type d -exec chmod 755 {} + || failed=1
       # Files: 644 (rw-r--r--) - no execute bit
-      find "${code_path}" -type f -exec chmod 644 {} + 2>/dev/null || true
+      find "${code_path}" -type f -exec chmod 644 {} + || failed=1
+      if (( failed )); then
+        log "WARNING: hardening ${code_path} reported errors; continuing."
+        failed_paths=$(( failed_paths + 1 ))
+      fi
     fi
   done
 
-  # Restore execute permissions on vendor/bin executables (drush, phpunit, etc.)
-  # These are wrapper scripts that call actual executables elsewhere in vendor
+  # The files pass above stripped the execute bit from every real CLI target
+  # under vendor/, so restore it on vendor/bin and on whatever each entry points
+  # at. Composer writes these as symlinks on Linux today, but it can emit proxy
+  # files instead; deriving the target covers both, where a hard-coded tool list
+  # (drush, phpunit, ...) goes stale the moment a dependency is added.
   if [[ -d "${project_root}/vendor/bin" ]]; then
     log "Restoring execute permissions on vendor/bin..."
-    chmod 755 "${project_root}/vendor/bin"/* 2>/dev/null || true
+    local entry target
+    for entry in "${project_root}/vendor/bin"/*; do
+      [[ -e "${entry}" ]] || continue
+      chmod 755 "${entry}" || log "WARNING: could not chmod ${entry}; continuing."
+      if [[ -L "${entry}" ]]; then
+        target="$(readlink -f "${entry}" 2>/dev/null)" || continue
+        if [[ -f "${target}" ]]; then
+          chmod 755 "${target}" || log "WARNING: could not chmod ${target}; continuing."
+        fi
+      fi
+    done
   fi
-
-  # Restore execute permissions on actual CLI tools in vendor (drush, etc.)
-  # The vendor/bin wrappers call these actual executables
-  local cli_executables=(
-    "${project_root}/vendor/drush/drush/drush"
-    "${project_root}/vendor/drush/drush/drush.php"
-  )
-  for exe in "${cli_executables[@]}"; do
-    if [[ -f "${exe}" ]]; then
-      chmod 755 "${exe}" 2>/dev/null || true
-    fi
-  done
 
   # Root-level web files (index.php, update.php, etc.)
   log "Securing root-level web files (root:www-data, 644)..."
-  find "${project_root}/web" -maxdepth 1 -type f -exec chown root:www-data {} + 2>/dev/null || true
-  find "${project_root}/web" -maxdepth 1 -type f -exec chmod 644 {} + 2>/dev/null || true
+  find "${project_root}/web" -maxdepth 1 -type f -exec chown root:www-data {} + \
+    || log "WARNING: chown of root-level web files reported errors; continuing."
+  find "${project_root}/web" -maxdepth 1 -type f -exec chmod 644 {} + \
+    || log "WARNING: chmod of root-level web files reported errors; continuing."
 
   # No blanket .htaccess pass here. Finding them meant walking every directory
   # under the project root, including the EFS-backed sites/ tree and its upload
@@ -113,7 +140,11 @@ harden_image_code() {
   # root-level pass above. Per-site .htaccess hardening is handled by an
   # external script that traverses each site. See adr/0008.
 
-  log "Image code hardening complete."
+  if (( failed_paths )); then
+    log "Image code hardening complete with ${failed_paths} path(s) reporting errors."
+  else
+    log "Image code hardening complete."
+  fi
 }
 
 main() {
@@ -122,16 +153,17 @@ main() {
   # 1. Cleanup deprecated paths (acts on the image's web root)
   cleanup_deprecated_paths
 
-  # 2. Harden image code permissions in the background (non-blocking).
+  # 2. Harden image code permissions. Runs in the FOREGROUND: this script is
+  # already forked by entrypoint.sh, which captures its exit status so a failed
+  # run is distinguishable from a slow one. Forking again would report success
+  # before the work happened, and would orphan a subshell onto Apache as PID 1.
+  #
   # Nothing here touches an EFS bind mount (php/custom.ini, modules/custom,
   # sites, drush, temp), so there is no version marker and no gating: the pass
   # only ever walks paths that ship in the image and is cheap to repeat.
-  (
-    harden_image_code
-    log "Background permission hardening complete."
-  ) &
+  harden_image_code
 
-  log "After-start tasks dispatched."
+  log "After-start tasks complete."
 }
 
 main "$@"
