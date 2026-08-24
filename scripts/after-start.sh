@@ -1,24 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# After-start script: Runs ~60 seconds after Apache starts
+# After-start script: runs once the web server answers (see entrypoint.sh)
 # Handles deprecated-path cleanup, permission hardening, and cache rebuild
 # This script is forked from entrypoint.sh and runs in the background
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck disable=SC1090
+# Shared helpers are REQUIRED; fail with a diagnostic rather than a bare bash
+# error, matching entrypoint.sh.
+if [[ ! -r "${SCRIPT_DIR}/lib/common.sh" ]]; then
+  echo "[after-start] FATAL: missing or unreadable ${SCRIPT_DIR}/lib/common.sh" >&2
+  exit 1
+fi
+# shellcheck source=lib/common.sh disable=SC1091
 source "${SCRIPT_DIR}/lib/common.sh"
 
+# Consumed by log() in lib/common.sh.
+# shellcheck disable=SC2034
 LOG_PREFIX="after-start"
 
-# Version tag for this release (used only to gate one-time startup tasks)
-# Read from package.json if available, otherwise use a default
-if command -v jq >/dev/null 2>&1 && [[ -f "/opt/drupal/package.json" ]]; then
-  AFTER_START_VERSION=$(jq -r '.version' /opt/drupal/package.json 2>/dev/null || echo "unknown")
-else
-  AFTER_START_VERSION="unknown"
-fi
+# Version tag for this release (used only to gate one-time startup tasks).
+# read_wrapper_version lives in lib/common.sh so the entrypoint and this script
+# derive the gate from one implementation.
+AFTER_START_VERSION="$(read_wrapper_version)"
 MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
 
 # Clean up deprecated paths
