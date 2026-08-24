@@ -1,0 +1,14 @@
+{
+  "name": "drupal-docker-wrapper",
+  "version": "11.4.5-v1",
+  "private": true,
+  "scripts": {
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules",
+    "lint:md:fix": "markdownlint '**/*.md' --ignore node_modules --fix",
+    "lint": "npm run lint:md"
+  },
+  "devDependencies": {
+    "markdownlint": "0.41.0",
+    "markdownlint-cli": "0.49.0"
+  }
+}

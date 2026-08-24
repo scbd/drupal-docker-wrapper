@@ -1,0 +1,43 @@
+# Environment files - may contain sensitive credentials
+.env
+.env*
+
+# Old/archived patches - not needed in production image
+patches/old
+
+# Git repository - not needed in container
+.git
+.gitignore
+.github
+
+# CI/CD files - not needed in runtime
+ci
+
+# Documentation - not needed in runtime
+docs
+*.md
+README.md
+
+# Development and testing files
+.editorconfig
+.eslintrc*
+.prettierrc*
+node_modules
+npm-debug.log*
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test files
+tests
+*.test.js
+*.spec.js
+
+# Local development files
+docker-compose.override.yml
+docker-compose.local.yml

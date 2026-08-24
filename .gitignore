@@ -26,3 +26,7 @@ logs
 efs
 server/efs
 .opt
+.vscode
+graphify-out
+docs/.temp
+backlog.jsonl
