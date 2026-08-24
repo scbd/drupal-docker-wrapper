@@ -343,4 +343,4 @@ This project: MIT (container build scripts). Drupal & contributed modules: GPL-2
 
 Refer to the `Dockerfile` for authoritative module version declarations.
 
-sudo docker save scbd/drupal-docker-wrapper:stg-11.4.5-v1 | gzip | ssh ubuntu@us2.staging.infra.cbd.int "gunzip | sudo docker load"
+sudo docker save scbd/drupal-docker-wrapper:stg-11.4.5-v2 | gzip | ssh ubuntu@us2.staging.infra.cbd.int "gunzip | sudo docker load"
