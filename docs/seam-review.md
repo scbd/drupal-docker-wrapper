@@ -1,34 +1,40 @@
 # Seam Review — landing `decom2` on `master` as reviewable pull requests
 
-> **Status: FINAL (rev 2, 2026-08-23).** Rev 1 of this document proposed three options (A, B, C)
-> for cutting an **uncommitted** pile targeting **Drupal 11.3.12**. Both premises are dead: the
-> work is now **7 commits** and the target is **Drupal 11.4.5 / wrapper `11.4.5-v1`**. Rev 2
-> retires the three-option format and finalises **one plan**, after a devil's-advocate pass by
-> three independent critics and a war-game of the execution.
+> **Status: FINAL (rev 3, 2026-08-24).** Target: Drupal 11.4.5 / wrapper `11.4.5-v2`. The premise
+> behind most of rev 2's Blockers section is gone: the repo owner confirmed the deployed `dmsm`
+> Swarm stack bind-mounts exactly five paths per site, and only `modules/custom` — never the whole
+> `modules` directory. `web/modules/contrib`, `web/core`, and `vendor` always come from the image
+> and cannot drift. The runtime module-repair seam existed to defend against a volume mask that is
+> structurally impossible; it has been deleted, not fixed. See
+> [ADR 0005](adr/0005-remove-runtime-module-repair.md).
 >
-> **Baseline:** `master`. **Branch:** `decom2` (`14e65ef..a25c43d`), 31 files, +5207 / -143.
+> **Baseline:** `master` now includes the merged `DEV-1154` and `DEV-1155` PRs (GitHub #11, #12).
+> **Branch:** `decom2` has not been rebased onto that merged baseline — it still forks from the
+> pre-merge `master` and carries `14e65ef..a25c43d` (rev 1's blob through the last version bump),
+> rev 2's own commit (`a77bc08`), and **six further commits** made since rev 2
+> (`cf5791b..47f8cad`). Full range from the fork point (`ee61e1a..47f8cad`): 32 files,
+> +5430 / -143.
 >
-> **Read this first:** the re-land is **blocked** on four correctness defects and one CI wall.
-> They are not seams — they are things that must be fixed or consciously accepted. See
-> [Blockers](#blockers-fix-or-consciously-accept) and
-> [Pre-cut fix-ups](#pre-cut-fix-ups).
+> **Read this first:** three of rev 2's four blockers are gone by deletion, not by fix — see
+> [Blockers](#blockers-fix-or-consciously-accept). Only **B3** (arm64 cannot build) survives, and
+> the CI wall (docs not lint-clean) is cleared. What remains is real: the plan's seams now have
+> real Jira tickets and, for two of them, real merged GitHub PRs; one open PR is dead and needs a
+> human to close it; B3 and a handful of majors are still live. See
+> [What changed since rev 2](#what-changed-since-rev-2) and
+> [What's still open](#whats-still-open).
 
 ---
 
-## What changed since rev 1
+## What changed since rev 2
 
-| Rev 1 said | Reality on `decom2` today |
+| Rev 2 said | Reality today |
 | --- | --- |
-| One uncommitted pile; reset to `master` and re-land | 7 commits, 6 of them well-scoped and ticket-tagged |
-| Target is Drupal 11.3.12 | `Dockerfile:4` is `FROM drupal:11.4.5-php8.4` |
-| Fix-up: README says `11.3.11` in seven places | **Already fixed** — zero matches in `README.md` |
-| Dangling hub links in three docs | Two were "fixed" to empty `(#)` anchors, which **breaks lint**; `docs/CONTEXT-MAP.md:3,16-20` still dangle |
-| Docs are "pure prose", so the docs PR is safe | **False** — 136 markdownlint errors across 5 tracked files |
-| `package.json` + `package-lock.json` are the npm inputs | Both `package-lock.json` **and** `yarn.lock` are committed, while `package.json:18` declares `packageManager: yarn@1.22.22` and CI runs `npm ci` |
-| Option C exists to rush the Critical `SA-CORE-2026-005..009` fix | That fix shipped in 11.3.12; the tree is five releases past it. **C's reason to exist has expired** |
-
-Three capabilities landed after rev 1 that **no option in rev 1 covered**: the runtime patch
-engine, multi-platform build support, and the dual-lockfile contradiction.
+| The re-land is blocked on four correctness defects and one CI wall | Three of the four blockers are gone — deleted, not fixed. Only B3 (arm64) survives. The CI wall is cleared: `npx markdownlint-cli2` reports 0 errors repo-wide |
+| The module-repair PR (486 impl LOC) is the riskiest and largest single PR in the plan | The premise underneath it was false. The deployed `dmsm` stack bind-mounts only `modules/custom`, never the whole `modules` tree — `web/modules/contrib` cannot drift. `repair_composer_managed_modules()` is deleted whole (`cf5791b`); see [ADR 0005](adr/0005-remove-runtime-module-repair.md) |
+| M4 (world-readable `settings.php`) and M8 (blind `sleep 60`) are unresolved majors | Both fixed on `decom2`: M4 by `8992ba1`, M8 by `dc8030d` |
+| The plan is nine PRs, numbered 1–9, with no link to a tracker | Ten Jira tickets exist under epic DEV-1153, nine of which remain in the plan. Two are already merged as real GitHub PRs (#11, #12); one (`DEV-1157`, the dropped module-repair PR #14) is superseded and needs a human to close it |
+| Remaining seams would be cut from `14e65ef..a25c43d` | `decom2` HEAD now carries six further commits with real fixes (permission hardening, the readiness poll, the docs resync) that were never in that original range. Remaining seams must be cut from `decom2` HEAD, not the original blob |
+| The docs PR is estimated at 1818 lines | Measured today at 1835 markdown lines plus a 32-line SVG (`README.md` + `docs/**`, excluding this file) — the content changed since rev 2 estimated it, and the docs are already written on `decom2` |
 
 ### The commits, by reviewable weight
 
@@ -48,94 +54,90 @@ Commit 1 is the whole problem this document exists to solve. Commits 2-7 are alr
 PR-sized — but three of them are trivial (`2ecdaf7` is four lines) and the docs drifted **inside**
 the bump chain, so replaying them verbatim would ship stale documentation.
 
+### The six commits since rev 2
+
+All tagged `(DEV-1153)`, all local to `decom2` (not yet pushed to `origin/decom2` as of this
+writing):
+
+| Commit | Subject | Total |
+| --- | --- | --- |
+| `cf5791b` | remove runtime module repair and dead integrity hashes | +8 / -238 |
+| `eb9d8ac` | stop drupal-scaffold from writing robots.txt | +18 / -2 |
+| `8992ba1` | stop after-start leaving settings.php world-readable | +14 / -3 |
+| `dc8030d` | replace the blind sleep 60 startup with a readiness poll | +162 / -30 |
+| `95a9895` | bump wrapper to 11.4.5-v2 | +4 / -4 |
+| `47f8cad` | correct the mount contract across the docs set | +440 / -394 |
+
+Net across all six against rev 2's `a77bc08`: 17 files changed, +643 / -668.
+
 ---
 
 ## Blockers (fix, or consciously accept)
 
-Found by the correctness critic and independently verified against source. The first two can
-destroy a live site's contrib tree on an ordinary container restart.
+Three of rev 2's four blockers are gone. Not fixed — deleted, along with the function that caused
+them.
 
-### B1 — Self-triggering destroy-and-reinstall loop on every restart
+### Resolved by the re-land (deletion, not repair)
 
-`scripts/after-start.sh:167` flags a module for repair when its directory owner is not
-`www_uid:www_gid` — which is `33:33` (`after-start.sh:66-67`). But `harden_mounted_volumes` later
-runs `chown -R root:www-data` over `web/modules` (`after-start.sh:288`), leaving `0:33`. The
-completion marker lives at `/tmp/after-start-<version>.complete` (`after-start.sh:22`), which does
-**not** survive a restart.
+| Blocker | Rev 2 finding | What happened |
+| --- | --- | --- |
+| B1 | Self-triggering destroy-and-reinstall loop: the ownership heuristic and the hardening step disagreed, so every restart past the completion marker `rm -rf`'d all ~38 contrib modules and reinstalled them | `repair_composer_managed_modules()` deleted whole (`cf5791b`). There is no ownership heuristic left to disagree with itself |
+| B2 | Destructive delete preceded a failure-tolerant restore, with the install's failure swallowed | Same deletion. No runtime `rm -rf` over contrib and no runtime `composer install` exist anywhere in the image |
+| B4 | Per-module SHA256 hashes were mis-generated (a `find` operator-precedence bug) and never verified by anything at runtime | The `.<module>.hash` generation deleted (`cf5791b`). Nothing ever read them; a correctly parenthesised `find` would still have produced files with no consumer |
 
-So boot 2 sees all ~38 contrib modules as "incorrect directory ownership", `rm -rf`s every one of
-them (`after-start.sh:211`), and re-runs a full `composer install`. Every restart, forever. On EFS
-that is minutes of HTTP 500s per boot.
-
-**Fix:** compare against the ownership hardening actually leaves (`0:${www_gid}`), or drop the
-ownership heuristic and gate solely on the `composer.lock` version check. Move the marker off
-`/tmp` to a persistent path under the project root.
-
-### B2 — Destructive delete precedes a failure-tolerant restore
-
-Every flagged module is `rm -rf`'d (`after-start.sh:205-218`) **before** `composer install` runs,
-and that install's failure is swallowed (`after-start.sh:233-239`). If drupal.org is unreachable,
-disk is full, or the archive extractor is missing (see M3), the modules are gone, the script logs
-"continuing", and it still touches the completion marker.
-
-**Fix:** never delete before the replacement is on disk. Restore to a temp dir and swap on
-success; capture the install exit code; do not write the marker on failure.
+None of these were fixed the way the correctness critic recommended — comparing against
+post-hardening ownership, restoring to a temp dir and swapping on success, or adding real startup
+verification. Those fixes would have hardened a feature that no longer has a reason to exist: the
+repair step existed to re-sync a volume-masked module tree, and that tree is not part of the
+deployed mount contract. See [ADR 0005](adr/0005-remove-runtime-module-repair.md).
 
 ### B3 — arm64 builds cannot succeed, so the multi-platform claim is false
 
 `aef57f0` added `ARG TARGETARCH` and per-arch apt cache ids precisely so multi-arch builds do not
-race on one apt lock (`Dockerfile:8,18,33,76,81,154`). But `Dockerfile:26` still hardcodes
-`awscli-exe-linux-x86_64.zip`, and `./aws/install` then executes a bundled x86_64 binary — an
+race on one apt lock (`Dockerfile:8,18,33,83,88,158`). But `Dockerfile:26` still hardcodes
+`awscli-exe-linux-x86_64.zip`, and `./aws/install` then executes a bundled x86_64 binary — a
 `linux/arm64` build dies with an exec-format error.
 
 **Fix:** select the archive from `$TARGETARCH` (`amd64` to `x86_64`, `arm64` to `aarch64`). While
-there, pin the AWS CLI version and verify its signature — today this is an unauthenticated
-`curl` piped into a root-privileged install in every image.
+there, pin the AWS CLI version and verify its signature — today this is an unauthenticated `curl`
+piped into a root-privileged install in every image. Or: decide arm64 is not actually needed and
+delete the `TARGETARCH` scaffolding instead of fixing it. See [What's still open](#whats-still-open).
 
-### B4 — The "integrity hashes" are mis-generated and never verified
+### The CI wall — cleared
 
-`Dockerfile:143-148` builds per-module SHA256 hashes, but `-a` binds tighter than `-o`, so the
-expression parses as `(-type f -a -name "*.php") -o (-name "*.info.yml") -o (-name
-"composer.json")` — the `-type f` guard covers only the `.php` branch. More seriously, nothing
-reads these hashes at runtime, and `scripts/lib/patches.sh` mutates module files at startup, so
-they are stale by design. `docs/architecture.md:323` is honest that they are "not machine-verified
-at startup" — which means the docs advertise a control that does not run.
+Rev 2 found 136 markdownlint errors across 5 tracked files; by the time rev 2 measured it the real
+number was 85 (two files had already been cleaned). `47f8cad` fixed the rest. Verified today:
 
-**Fix:** either parenthesise the `find` expression **and** add real startup verification, or
-delete the hash generation together with the README and architecture claims about it. Do not ship
-half of it.
-
-### The CI wall — the docs are not lint-clean
-
-Every plan orders CI last on the premise that the documentation is lint-clean. It is not:
-`markdownlint-cli@0.49.0` over the tracked `.md` set reports **136 errors**.
-
-| File | Errors |
-| --- | --- |
-| `docs/seam-review.md` (this file, before rev 2) | 51 |
-| `docs/architectural-plan.md` | 45 |
-| `README.md` | 28 |
-| `docs/drupal-docker-wrapper.md` | 6 |
-| `docs/architecture.md` | 6 |
-
-Dominated by MD060 (table column style) and MD042 (empty links — the `(#)` anchors at
-`docs/architectural-plan.md:6-13,29` and `docs/drupal-docker-wrapper.md:1-8` that were introduced
-as the "fix" for the dangling hub links). Until this is cleared, the CI PR can never go green.
+```text
+$ npx markdownlint-cli2 docs/seam-review.md
+Summary: 0 issues in 0 files
+$ npx markdownlint-cli2 "**/*.md" "#node_modules" "#graphify-out"
+Linting: 13 files
+Summary: 0 issues in 0 files
+```
 
 ### Majors worth naming in a PR body
 
-| # | Where | Finding |
-| --- | --- | --- |
-| M1 | `Dockerfile:118` | `drupal/jsonapi_extras:3.x-dev@dev` floats, in an image whose stated value is reproducible pinning; no `composer.lock` is tracked. The pinned `3.27` sits commented at `Dockerfile:149` |
-| M2 | `Dockerfile:55-70` | The guzzle/psr7 advisory suppression still justifies itself by "the fix shipped in 11.3.12" while the base is 11.4.5. Nobody has re-tested whether it is still needed |
-| M3 | `Dockerfile:156` | `unzip` is purged, but `after-start.sh` runs `composer install --prefer-dist` at runtime. Combined with B2, a failure here means deleted modules and no restore |
-| M4 | `after-start.sh:351` | `chmod -R 755` over `web/sites` leaves **`settings.php` world-readable** — it holds DB credentials and the hash salt |
-| M5 | `ci.yml:50` | Plain `docker build`, no buildx, no `--platform`. CI would never catch B3 |
-| M6 | `ci/lint.sh:11` | Dual lockfiles with contradictory tooling (see below). Green today by luck — the two locks happen to agree |
-| M7 | `ci/smoke-test.sh:15` | The smoke test sleeps 12s; `after-start.sh` is scheduled at T+60s. **The riskiest code in the repo is never exercised in CI**, nor is `patches.sh` |
-| M8 | `entrypoint.sh:26` | Blind `sleep 60`, exit code discarded. The healthcheck goes unhealthy mid-repair, the orchestrator restarts, the repair restarts — B1 never converges |
-| M9 | `patches.sh:70-96` | The `patch(1)` fallback applies hunk-by-hunk, so a mid-way failure leaves a partial apply that the `--fuzz=3` retry can double-apply. `git` is kept in the image, so this path is dead code carrying live risk |
-| M10 | `after-start.sh:174-182` | A hand-placed module in `web/modules/contrib` is `rm -rf`'d and never restored, because `composer install` does not know about it |
+| # | Where | Finding | Status |
+| --- | --- | --- | --- |
+| M1 | `Dockerfile:125` | `drupal/jsonapi_extras:3.x-dev@dev` floats, in an image whose stated value is reproducible pinning; no `composer.lock` is tracked. The pinned `3.27` sits commented at `Dockerfile:153` | Live |
+| M2 | `Dockerfile:55-61,77` | The guzzle/psr7 advisory suppression still justifies itself by "the fix shipped in 11.3.12" while the base is 11.4.5. Nobody has re-tested whether it is still needed | Live |
+| ~~M3~~ | ~~`Dockerfile:156`~~ | ~~`unzip` is purged, but `after-start.sh` runs `composer install` at runtime~~ | **Evaporated** — no runtime `composer install` exists anywhere (`cf5791b`). `unzip` is still purged after the build-time install finishes; nothing at runtime needs it |
+| M4 | `after-start.sh:150-154` | ~~`chmod -R 755` over `web/sites` left `settings.php` world-readable~~ | **Fixed**, `8992ba1` — `settings*.php` / `services*.yml` are now `440 root:www-data` |
+| M5 | `.github/workflows/ci.yml:50` | Plain `docker build`, no buildx, no `--platform`. CI would never catch B3 | Live |
+| M6 | `package.json:18`, `ci/lint.sh:11` | Dual lockfiles with contradictory tooling: `yarn.lock` and `package-lock.json` both tracked, `packageManager: yarn@1.22.22` declared, CI runs `npm ci`. Untouched by the re-land — has no Jira ticket assigned | Live |
+| M7 | `ci/smoke-test.sh:15` | The smoke test sleeps 12s and checks PHP/Drush/module directories. It never touches `after-start.sh`, the readiness poll, or `patches.sh` | Live, but easier now — see below |
+| M8 | `entrypoint.sh:66-106` | ~~Blind `sleep 60`, exit code discarded~~ | **Fixed**, `dc8030d` — replaced with a readiness poll (`wait_for_http_ready`) with a captured exit status |
+| M9 | `scripts/lib/patches.sh:70-96` | The `patch(1)` fallback applies hunk-by-hunk, so a mid-way failure leaves a partial apply that the `--fuzz=3` retry can double-apply. `git` is kept in the image (`Dockerfile:156` comment), so this path is dead code carrying live risk | Live |
+| ~~M10~~ | ~~`after-start.sh:174-182`~~ | ~~A hand-placed module in `web/modules/contrib` was `rm -rf`'d and never restored~~ | **Resolved by deletion** — same function as B1/B2 |
+
+**M7 reworded.** There is no repair to re-run, so rev 2's framing ("catch B1/B2/M4 by exercising
+the repair path") no longer applies. What the smoke test should now assert is simpler: that
+`after-start.sh` runs and completes, that `settings.php` ends up at `440`, and that no patch
+marker is left half-applied. The entrypoint's `DRUPAL_AFTER_START_READY_TIMEOUT` and
+`DRUPAL_AFTER_START_READY_URL` overrides (`entrypoint.sh:39-41`, added in `dc8030d`) mean CI can
+drive that work immediately instead of guessing a fixed delay — a side effect that makes M7
+easier to fix, not harder.
 
 ---
 
@@ -166,87 +168,95 @@ flowchart TD
     IG -- "③.gitignore must unlock .github/workflows" --> CI
 ```
 
-1. **① Build-time glue.** The Dockerfile copies the scripts and `package.json` into the image
-   (`Dockerfile:185,188-189`), so it cannot build until those exist.
+1. **① Build-time glue.** The Dockerfile copies `package.json` and the scripts into the image
+   (`Dockerfile:189,192-193`), so it cannot build until those exist.
 2. **② CI-time glue.** Turning CI on needs four things at once: a Dockerfile that builds, the
    npm tooling plus its lockfile, the `ci/*.sh` scripts, and **every tracked `.md` lint-clean**
    (`build-test` has `needs: lint`).
 3. **③ VCS glue.** `master` git-ignores `.github` wholesale; the branch changes this to
    `.github/*` plus `!.github/workflows/`. Until that lands, `ci.yml` cannot even be tracked, so
-   the unlock must travel **with** the CI PR.
-4. **④ Content glue (bidirectional).** `ci/smoke-test.sh:24` asserts
+   the unlock must travel **with** the CI PR. This part of the split has already held in practice:
+   `DEV-1155`'s merged `.gitignore` diff carries only scratch-tooling ignores
+   (`.vscode`, `graphify-out`, `docs/.temp`, `backlog.jsonl`); the workflow unlock is not in it.
+4. **④ Content glue (bidirectional).** `ci/smoke-test.sh:24,26` asserts
    `web/modules/contrib/{jsonapi_extras,search_api}` exist, hard-coding names from the
-   Dockerfile's module list. Worse now: one side of that weld floats (M1).
-5. **⑤ Patch glue (new, and it is atomic).** `Dockerfile:51` copies `./patches/` in the **first**
+   Dockerfile's module list. One side of that weld floats (M1).
+5. **⑤ Patch glue, and it is atomic.** `Dockerfile:51` copies `./patches/` in the **first**
    build stage and `Dockerfile:67` names
    `patches/auto_node_translate--2026-07-15--3609236--gate-on-permission.patch` literally. If that
-   file is absent, the build fails. This is not additive-but-unused the way `patches/.gitkeep`
-   was — it is a hard build input. Separately, `entrypoint.sh:12,21` sources the patch engine and
-   applies discovered patches **synchronously, before Apache starts**, so `patches.sh` is now a
-   runtime behaviour change rather than inert scaffolding.
+   file is absent, the build fails. Separately, `entrypoint.sh:28-31,115-117` sources the patch
+   engine and applies discovered patches **synchronously, before Apache starts**, so `patches.sh`
+   is a runtime behaviour change rather than inert scaffolding.
 
 **The takeaway is unchanged but sharper:** the Dockerfile is the hinge, CI is the most-coupled PR,
-and the patch engine has become a second thing that must land before the image can build.
+and the patch engine is a second thing that must land before the image can build.
 
 ---
 
 ## Inventory
 
-| # | Logical change | Files | Kind | Stands alone? |
-| --- | --- | --- | --- | --- |
-| 1 | Decommission the Drupal 10 image | delete `d10/Dockerfile` | move-only | **Yes** — nothing builds it |
-| 2 | Two-phase startup runtime | `scripts/{entrypoint,after-start}.sh`, `scripts/lib/common.sh` | adds-new | **Yes**, but carries B1, B2, M4, M8, M10 |
-| 3 | Runtime patch engine | `scripts/lib/patches.sh`, `patches/*.patch`, `patches/.gitkeep` | adds-new | **Yes** as files; becomes a build input at #5 and a runtime behaviour at `entrypoint.sh:21` |
-| 4 | npm tooling and ignore rules | `package.json`, one lockfile, `.markdownlint.json`, `.dockerignore`, `.gitignore` | config | **Yes**, once the dual-lockfile contradiction is resolved |
-| 5 | Rebuild the image to Drupal 11.4.5-v1 | `Dockerfile` (1-stage to 3-stage, ~38 pinned modules, GD/AVIF, AWS CLI, hashes, manifest, prod php.ini, entrypoint wiring) | switches-it-on | **No** — needs #2, #3, #4; carries M1, M2, M3, B4 |
-| 6 | Multi-platform build support | `Dockerfile` `TARGETARCH` args and per-arch apt caches | adds-new | **Yes** on top of #5, but **broken** until B3 is fixed |
-| 7 | CI pipeline | `.github/workflows/ci.yml`, `ci/{lint,smoke-test,test-ci-locally}.sh` | adds-new | **Only last** — see glue ② and ③ |
-| 8 | Documentation set | `README.md`, `docs/CONTEXT*.md`, `docs/prd.md`, `docs/architecture*.md`, `docs/drupal-docker-wrapper.md`, `docs/adr/000{1..4}*.md`, `docs/images/overview.svg` | docs | **Not until lint-clean**, and the prose is four patch versions stale |
+| Jira | GitHub PR | Status | Logical change | Files | Kind | Stands alone? |
+| --- | --- | --- | --- | --- | --- | --- |
+| DEV-1154 | #11 | **Merged** | Decommission the Drupal 10 image | delete `d10/Dockerfile` | move-only | Yes |
+| DEV-1155 | #12 | **Merged** | npm tooling, lint config, and ignore rules (minus the workflow unlock) | `package.json`, `package-lock.json`, `.markdownlint.json`, `.dockerignore`, `.gitignore` (scratch entries) | config | Yes |
+| DEV-1156 | #13 | Open (Jira: Peer Review) | Two-phase startup entrypoint and shared helpers | `scripts/entrypoint.sh`, `scripts/lib/common.sh` | adds-new | Yes |
+| DEV-1157 | #14 | Open, **dropped** | ~~After-start module repair~~ — feature deleted, PR superseded, needs a human to close it | `scripts/after-start.sh` (old version) | — | — |
+| DEV-1158 | none yet | Jira: To Do | After-start permission hardening and cleanup | `scripts/after-start.sh` | adds-new | Yes, once DEV-1156 is merged |
+| DEV-1159 | none yet | Jira: To Do | Runtime patch engine and the `auto_node_translate` patch | `scripts/lib/patches.sh`, `patches/*.patch`, `patches/.gitkeep` | adds-new | Yes as files; becomes a build input once wired into the Dockerfile |
+| DEV-1160 | none yet | Jira: To Do | Rebuild the image on a three-stage build | `Dockerfile` (1-stage to 3-stage, 41 pinned packages, GD/AVIF, AWS CLI, manifest, prod php.ini, entrypoint wiring) | switches-it-on | No — needs DEV-1155, DEV-1156, DEV-1158, DEV-1159; carries M1, M2 |
+| DEV-1161 | none yet | Jira: To Do | Multi-platform build support and the x86-pinned AWS CLI | `Dockerfile` `TARGETARCH` args and per-arch apt caches | adds-new | Yes on top of DEV-1160, but **broken** until B3 is fixed |
+| DEV-1162 | none yet | Jira: To Do | Documentation set | `README.md`, `docs/CONTEXT*.md`, `docs/prd.md`, `docs/architecture*.md`, `docs/drupal-docker-wrapper.md`, `docs/adr/000{1..5}*.md`, `docs/images/overview.svg` | docs | Yes, and already written on `decom2` (`47f8cad`) — only needs opening as a PR |
+| DEV-1163 | none yet | Jira: To Do | CI pipeline with the workflow gitignore unlock | `.github/workflows/ci.yml`, `ci/{lint,smoke-test,test-ci-locally}.sh`, the remaining `.gitignore` hunk | adds-new | Only last — see glue ② and ③ |
 
-> ⚠️ **Three risks must be named in their PR body, never dark-shipped:**
+`DEV-1157`'s ticket cannot move to Done while its PR stays open — this Jira project's workflow has
+only To Do / In Progress / Code Review / Done, with no Won't Do or Cancelled state, so it sits in
+Peer Review pending a human closing PR #14. Every ticket from `DEV-1158` onward carries a dated
+"Amendment 2026-08-24 (DEV-1153 re-land)" note that the old "PR n/10" numbering in its description
+is off by one now that the module-repair PR is dropped — this document is the authoritative
+re-cut. `DEV-1160` and `DEV-1162`'s Jira summaries still say `11.4.5-v1` and need a human rename.
+
+> ⚠️ **Two risks must still be named in their PR body, never dark-shipped:**
 >
-> - `scripts/after-start.sh:211` **and `:257`** both run `rm -rf` (rev 1 named only the first).
->   With B1 and B2 unfixed, this is a data-destruction path on an ordinary restart.
-> - `Dockerfile:70` suppresses three guzzle/psr7 security advisories per BL-695, on a rationale
->   that predates the current base image (M2).
-> - `scripts/entrypoint.sh:21` applies **any** discovered `.patch` file to the contrib tree at
->   every container start, synchronously, before Apache.
+> - `Dockerfile:55-61,77` suppresses three guzzle/psr7 security advisories per BL-695, on a
+>   rationale that predates the current base image (M2).
+> - `scripts/entrypoint.sh:28-31,115-117` applies **any** discovered `.patch` file to the contrib
+>   tree at every container start, synchronously, before Apache.
+>
+> One risk from rev 2 is gone: `scripts/after-start.sh:211` and `:257` no longer exist.
+> `repair_composer_managed_modules()` — the only runtime `rm -rf` over contrib and the only
+> runtime `composer install` — was deleted whole (`cf5791b`). The one `rm -rf` left in
+> `after-start.sh` (line 49) removes a single deprecated file, not a directory tree.
 
 ---
 
 ## Pre-cut fix-ups
 
-Defects in the pile that any plan inherits. Fix them once, before cutting.
+Defects in the pile that any plan inherits. Two of the five are done; three remain.
 
-**P1 — Make the tracked markdown lint-clean.** 136 errors; this blocks the CI PR outright. Give
-the `(#)` placeholders in `docs/architectural-plan.md:6-13,29` and
-`docs/drupal-docker-wrapper.md:1-8` real absolute GitHub URLs, do the same for the still-relative
-hub links at `docs/CONTEXT-MAP.md:3,16-20`, and fix MD060 table style repo-wide.
+**P1 — Make the tracked markdown lint-clean. DONE.** `47f8cad` cleared the last of the errors; see
+[The CI wall — cleared](#the-ci-wall--cleared).
 
-**P2 — Resolve the package-manager contradiction.** `package-lock.json` and `yarn.lock` are both
-committed; `package.json:18` declares `packageManager: yarn@1.22.22`; `ci/lint.sh:11` runs
-`npm ci` and `ci.yml:31` sets `cache: npm`. The two locks agree **today**, so CI is green by luck —
-the first `yarn add` updates only `yarn.lock` while CI keeps installing from a stale npm lock, and
-the tool that gates every other PR silently diverges. *Recommended:* delete `yarn.lock` and the
-`packageManager` field, keep npm — it matches CI as written and needs zero workflow edits. Pin the
-two caret-ranged devDependencies exactly while you are there.
+**P2 — Resolve the package-manager contradiction.** Still open. `package-lock.json` and
+`yarn.lock` are both committed; `package.json:18` declares `packageManager: yarn@1.22.22`; CI
+runs `npm ci`. Unchanged since rev 2 — `DEV-1155` merged the rest of the npm tooling without
+touching this (M6). *Recommended:* delete `yarn.lock` and the `packageManager` field, keep npm.
 
-**P3 — Re-test the BL-695 advisory suppression at 11.4.5.** Build once with
-`policy.advisories.ignore-id` removed. If it builds clean, delete the block and the ⚠️ disappears
-from the plan entirely. If it does not, correct the stale 11.3.12 rationale at `Dockerfile:55-61`
-and give it an expiry date.
+**P3 — Re-test the BL-695 advisory suppression at 11.4.5.** Still open. Build once with
+`policy.advisories.ignore-id` (`Dockerfile:77`) removed. If it builds clean, delete the block and
+the ⚠️ disappears from the plan entirely. If it does not, correct the stale 11.3.12 rationale at
+`Dockerfile:55-61` and give it an expiry date.
 
-**P4 — Resync the docs to 11.4.5-v1.** The bump chain left the prose behind: `docs/architecture.md:106,138`,
-`docs/architectural-plan.md:177,209,481`, `docs/prd.md:128` and `docs/CONTEXT.md:110` all still say
-**11.4.1** while `Dockerfile:4` says 11.4.5. Landing as-is means documentation that is four patch
-versions stale on day one.
+**P4 — Resync the docs to the current wrapper version. DONE.** `47f8cad` resynced the whole docs
+set to Drupal 11.4.5 / wrapper `11.4.5-v2`. The two remaining "11.4.1" mentions
+(`docs/prd.md:143`, `docs/architectural-plan.md:463`) are correct historical references to when
+the CVE fix shipped, not drift — verified by reading both in context.
 
-**P5 — Decide this document's fate.** Rev 1 was tracked inside `14e65ef` and was the single worst
-lint offender (51 of the 136 errors). Rev 2 is written lint-clean, but it is still process
-ephemera describing a re-land rather than project documentation. *Recommended:* keep it until the
-re-land completes, then delete it in the final PR.
+**P5 — Decide this document's fate.** Still open, and more clearly moot than in rev 2: this is
+rev 3, and the re-land still is not finished. *Recommended, unchanged:* keep it until the re-land
+completes, then delete it in the final PR.
 
-**Dropped from rev 1:** the README `11.3.11` version typo — already fixed, zero matches remain.
+**Dropped from rev 1 (unchanged):** the README `11.3.11` version typo — already fixed, zero
+matches remain.
 
 ---
 
@@ -274,91 +284,80 @@ the PRs where their content belongs. One PR per Drupal version bump is explicitl
 `2ecdaf7` is a four-line change and `a25c43d` is four non-lockfile lines, so per-version PRs are
 pure review overhead, and replaying them verbatim would preserve the doc drift P4 exists to fix.
 
-### The PRs
+### Sizing and dependencies
 
-LOC counts are from `git diff master...decom2 --numstat`. **Impl** is implementation code — the
-number the ~200 target and 400 ceiling apply to. **Other** is generated lockfiles, prose, patch
-data, and SVG, which do not count against the ceiling.
+LOC counts are measured directly against `decom2` HEAD (`wc -l`, `git diff --stat`, or a merged
+PR's own `additions`/`deletions`) except where marked (est.). **Impl** is implementation code
+against the ~200 target / 400 ceiling; **Other** is lockfiles, prose, and patch data, which do not
+count against it.
 
-| # | PR (one sentence, no "and") | Kind | Impl LOC | Other LOC | Source | Depends on |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | Remove the retired Drupal 10 image | move-only | 63 (all deletions) | — | `14e65ef` | — |
-| 2 | Make the tracked markdown lint-clean | prep | — | ~136 touched | P1 | — |
-| 3 | Add npm tooling, lint config, and ignore rules on one package manager | config | 78 | 1209 lockfile | `14e65ef` + P2 | — |
-| 4 | Add the two-phase startup scripts, inert | adds-new | **486** ⚠️ | — | `14e65ef` | — |
-| 5 | Add the runtime patch engine and the `auto_node_translate` patch | adds-new | 183 | 49 patch | `557a32a` + `e3a3f81` | 4 |
-| 6 | Rebuild the image to Drupal 11.4.5-v1 with the new entrypoint | switches-it-on | 188 / -68 | — | `14e65ef` + all bumps | 3, 4, 5 |
-| 7 | Enable multi-platform builds and fix the x86-pinned AWS CLI | adds-new | ~20 | — | `aef57f0` + B3 | 6 |
-| 8 | Land the documentation set at 11.4.5-v1 | docs | — | **1818** | `14e65ef` + P4 | 2 |
-| 9 | Add the CI pipeline with the workflow gitignore unlock | adds-new | ~300 | — | `14e65ef` + M5 | 3, 6, 7, 8 |
+The 400-line ceiling that forced rev 2's `4a`/`4b`/`4c` split no longer binds. `4b` — the
+destructive `rm -rf`/`composer install` path — is gone. What is left splits naturally into
+`DEV-1156` (185 impl) and `DEV-1158` (~226 impl), both comfortably under the ceiling without
+three-way surgery.
 
-**Two rows break the sizing rules and need a decision.**
+| Jira | One sentence | Kind | Impl LOC | Other LOC | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| DEV-1154 | Remove the retired Drupal 10 image | move-only | -63 (all deletions) | — | — *(merged)* |
+| DEV-1155 | Add npm tooling, lint config, and ignore rules on one package manager | config | 73 | 1195 lockfile | — *(merged)* |
+| DEV-1156 | Add the two-phase startup entrypoint and shared shell helpers | adds-new | 185 | — | — *(open, #13)* |
+| DEV-1158 | Add after-start permission hardening and cleanup | adds-new | ~226 (est. — whole file; not yet cut as its own diff) | — | DEV-1156 |
+| DEV-1159 | Add the runtime patch engine and the `auto_node_translate` patch | adds-new | 183, less the `patch(1)` fallback this PR deletes per M9 | 49 patch | DEV-1156 |
+| DEV-1160 | Rebuild the image on a three-stage build | switches-it-on | ~186 (est. — 206 measured Dockerfile delta minus ~20 attributable to DEV-1161) | — | DEV-1155, DEV-1156, DEV-1158, DEV-1159 |
+| DEV-1161 | Enable multi-platform builds and fix the x86-pinned AWS CLI | adds-new | ~20 (est., unchanged since rev 2 — none of the six new commits touched `TARGETARCH`) | — | DEV-1160 |
+| DEV-1162 | Land the documentation set | docs | — | 1835 markdown + 32 SVG (measured; already written) | — |
+| DEV-1163 | Add the CI pipeline with the workflow gitignore unlock | adds-new | ~258 (measured: 99+62+29+68 across `ci.yml` + 3 scripts) plus a small `.gitignore` hunk | — | DEV-1160, DEV-1161, DEV-1162, DEV-1155 (lockfile) |
 
-**PR 4 at 486 impl LOC is over the 400 hard ceiling**, and the blocker fixes (B1, B2, M4, M8, M10)
-will push it higher. It is one file doing it: `after-start.sh` is 428 lines on its own, with
-`entrypoint.sh` (38) and `lib/common.sh` (20) making up the rest. The honest split is by function
-rather than by file:
+`DEV-1157` (the dropped module-repair PR, 486 impl LOC) is excluded from this table — it will
+never land.
 
-| Split | Contents | Impl LOC |
-| --- | --- | --- |
-| 4a | `entrypoint.sh` + `lib/common.sh` — the thin wrapper and shared helpers | 58 |
-| 4b | `after-start.sh` module repair — the `rm -rf` path plus B1, B2, M10 fixes | ~250 |
-| 4c | `after-start.sh` permission hardening and cleanup — plus the M4 fix | ~180 |
+**DEV-1162 at 1835 lines is enormous but is entirely prose**, so the ceiling does not apply. Its
+content already exists on `decom2`; what remains is opening it as a real PR.
 
-That is worth doing regardless of the ceiling: 4b is the destructive path and deserves its own
-focused review, which is exactly what a 486-line PR would deny it. 4a must land first (4b and 4c
-are functions the wrapper calls), so this adds two merges, not two review surfaces' worth of risk.
-
-**PR 8 at 1818 lines is enormous but is entirely prose**, so the ceiling does not apply. Split it
-only if reviewers ask — the natural line is the four ADRs plus `CONTEXT*.md` (316 lines, the
-durable design record) separate from `README.md` plus the plan and architecture docs (1502).
-
-**PR 9 at ~300** is at the upper end but coherent, and it is the one PR that cannot be split: the
-workflow, its scripts, and the `.gitignore` unlock must land atomically (glue ③).
+**DEV-1163 at ~258** is coherent and is the one PR that cannot be split: the workflow, its
+scripts, and the `.gitignore` unlock must land atomically (glue ③).
 
 ```mermaid
 flowchart TD
-    P1[1 · remove d10<br/>63 impl]
-    P2[2 · markdown lint-clean<br/>prose only]
-    P3[3 · npm tooling, one lockfile<br/>78 impl]
-    P4A[4a · entrypoint + common<br/>58 impl]
-    P4B[4b · module repair ⚠️<br/>~250 impl]
-    P4C[4c · permission hardening<br/>~180 impl]
-    P5[5 · patch engine + patch file<br/>183 impl]
-    P6[6 · rebuild image 11.4.5-v1<br/>188 impl]
-    P7[7 · multi-arch + AWS CLI fix<br/>~20 impl]
-    P8[8 · documentation<br/>1818 prose]
-    P9[9 · CI pipeline + unlock<br/>~300 impl]
-    P4A --> P4B
-    P4A --> P4C
-    P4B --> P5
-    P4C --> P5
-    P5 -- "⑤ patches/ is a build input" --> P6
-    P3 --> P6
-    P6 --> P7
-    P2 --> P8
-    P6 --> P9
-    P7 --> P9
-    P3 -- "lockfile for npm ci" --> P9
-    P8 -- "lint-clean" --> P9
+    D1154[DEV-1154 · remove d10<br/>MERGED #11]
+    D1155[DEV-1155 · npm tooling<br/>MERGED #12]
+    D1156[DEV-1156 · entrypoint + common<br/>OPEN #13 · 185 impl]
+    D1158[DEV-1158 · after-start hardening<br/>~226 impl]
+    D1159[DEV-1159 · patch engine + patch file<br/>183 impl]
+    D1160[DEV-1160 · rebuild image 11.4.5-v2<br/>~186 impl]
+    D1161[DEV-1161 · multi-arch + AWS CLI fix<br/>~20 impl]
+    D1162[DEV-1162 · documentation<br/>1835 prose]
+    D1163[DEV-1163 · CI pipeline + unlock<br/>~258 impl]
+
+    D1156 --> D1158
+    D1156 --> D1159
+    D1158 --> D1160
+    D1156 -- "① Dockerfile COPYs entrypoint.sh" --> D1160
+    D1159 -- "⑤ patches/ is a build input" --> D1160
+    D1155 --> D1160
+    D1160 --> D1161
+    D1160 --> D1163
+    D1161 --> D1163
+    D1155 -- "lockfile for npm ci" --> D1163
+    D1162 -- "lint-clean" --> D1163
 ```
 
-**Recommended order:** P1–P5 fix-ups, then *1 and 2 in parallel, 3, 4, 5, 6, 7, 8, 9 last.*
+**Recommended order:** `DEV-1154`/`DEV-1155` are already merged. Next: `DEV-1156` (already open)
+merges, then `DEV-1158` and `DEV-1159` in parallel, then `DEV-1160`, `DEV-1161`, `DEV-1162`
+(content already written, just needs opening), `DEV-1163` last.
 
-### Where each blocker lands
+### Where each finding lands
 
-| Blocker | Lands in | Disposition |
+| Finding | Lands in | Disposition |
 | --- | --- | --- |
-| B1, B2, M4, M8, M10 | PR 4 | **Fix before landing.** These are data-destruction paths, not disclosures |
-| M9 | PR 5 | Delete the `patch(1)` fallback — `git` is kept in the image, so it is dead code |
-| B4, M1, M2, M3 | PR 6 | Disclose in the body; M2 may vanish via P3 |
-| B3 | PR 7 | Fix is the point of the PR |
-| M5, M7 | PR 9 | Add buildx, and make the smoke test actually exercise `after-start.sh` |
-
-**M7 deserves emphasis.** A smoke test that overrides the 60-second delay, waits for the
-completion marker, then asserts that every module in `modules-versions.txt` still has a directory
-and that `settings.php` is not world-readable would have caught B1, B2 and M4 by itself. It is the
-highest-value single addition in this plan.
+| B1, B2, B4, M10 | — | Resolved by deletion in `cf5791b`, already on `decom2` |
+| M4 | — | Fixed in `8992ba1`, already on `decom2` |
+| M8 | — | Fixed in `dc8030d`, already on `decom2` |
+| M9 | DEV-1159 | Delete the `patch(1)` fallback — `git` is kept in the image, so it is dead code |
+| M1, M2 | DEV-1160 | Disclose in the body; M2 may vanish if Fork F1 below resolves clean |
+| B3 | DEV-1161 | Fix is the point of the PR, or delete the scaffolding — see [What's still open](#whats-still-open) |
+| M5, M7 | DEV-1163 | Add buildx; strengthen the smoke test per the M7 reword above |
+| M6 | unclaimed | Still needs a home — `DEV-1155` merged the rest of the npm tooling without touching it |
 
 ---
 
@@ -368,126 +367,117 @@ The plan above is the blue-sky path. This section fights it move by move — dep
 T2–T3 (a trigger-following model). Per move: the action, the observation that means it worked, the
 most likely failure with its signals, and the pre-decided countermove.
 
-### Recon (before move 1)
+### Recon (before the next move)
 
-- Confirm `master` is unchanged since `decom2` forked: `git merge-base --is-ancestor master decom2`.
-- Confirm the lint baseline: `npx markdownlint-cli@0.49.0 $(git ls-files '*.md')` reports 136.
-- Confirm both lockfiles resolve the same three devDependencies (they do today — this is the
-  fact that makes P2 safe to do as a delete rather than a regeneration).
-- Confirm a local Docker build of `decom2` HEAD succeeds on amd64 before cutting anything. If the
-  branch does not build today, every downstream move is guesswork.
+- Confirm the lint baseline: `npx markdownlint-cli2 $(git ls-files '*.md')` — 0 today, not 136 or
+  85.
+- Confirm `decom2`'s relationship to the real `master`: `git merge-base --is-ancestor master
+  decom2` is only true against the **old** `master` (`ee61e1a`). The real `master` has since moved
+  (merged `DEV-1154`, `DEV-1155`), and `decom2` has not been rebased onto it.
+- Confirm both lockfiles still exist and agree: `yarn.lock` and `package-lock.json` are both still
+  tracked (M6). `yarn.lock` is untouched since rev 2; `package-lock.json` had its two version
+  fields bumped by `95a9895`, so do not expect a zero diff there.
+- Confirm a local Docker build of `decom2` HEAD succeeds on amd64 before cutting anything further.
 
-### Move 1 — Fix-up P2 (one package manager)
+### Moves already executed for real
 
-- **Action:** delete `yarn.lock` and the `packageManager` field; pin the two devDependencies.
-- **Expect:** `npm ci` succeeds; `npm run lint:md` runs and reports the same 136 errors.
-- **Likely failure:** the pinned exact versions resolve differently from the caret ranges and the
-  error count *changes*. Cause: `markdownlint-cli@^0.49.0` had floated. Signals: a different
-  error total, or new rule ids.
-- **Countermove:** pin to whatever versions the current lockfile already resolves, not to the
-  latest. The point is to freeze today's behaviour, not to upgrade.
+`DEV-1154` and `DEV-1155` are merged (`#11`, `#12`). Both landed the way rev 2's war-game
+predicted: PR1 had no plausible failure and none occurred; PR3's `.gitignore` hunk was split
+deliberately, exactly as its countermove demanded — `#12`'s merged diff carries only the
+scratch-tooling ignores (`.vscode`, `graphify-out`, `docs/.temp`, `backlog.jsonl`); the
+`.github/workflows` unlock is not in it and still lives only on `decom2`, where it belongs until
+the CI PR. The lint-clean prep (rev 2's "PR 2") never became its own ticket — it shipped inside the
+documentation commit (`47f8cad`) instead, and nothing depended on it separately.
 
-### Move 2 — Fix-up P1 (lint-clean the markdown)
+### Move — DEV-1156 + DEV-1158 (was "the highest-risk move" in rev 2)
 
-- **Action:** fix MD042 empty links and MD060 table style across the five offending files.
-- **Expect:** `npx markdownlint-cli@0.49.0 $(git ls-files '*.md')` exits 0.
-- **Likely failure:** fixing MD042 by pointing the hub links at absolute GitHub URLs for sibling
-  `@bl2` repos that are private or not yet pushed — the links lint clean but 404 for reviewers.
-  Signals: a reviewer reports a dead link; the target repo is not public.
-- **Countermove:** prefer a short "these resolve in the Bioland hub repo" note plus plain text
-  over a URL you cannot verify resolves. Lint does not resolve paths, so plain text is safe.
-- **Second-order:** clearing lint locally does not prove CI clean — CI checks out without
-  `graphify-out/`, which contributes 34 gitignored errors locally. Verify against
-  `git ls-files`, never a bare glob.
+Rev 2 called this move the highest risk in the whole plan: it had to fix a self-triggering restart
+loop, a delete-before-restore ordering bug, world-readable `settings.php`, and a discarded
+`sleep 60` exit code, all in the one PR that runs at container start. Two of those findings are not
+fixed, they are gone — B1 and B2 do not exist once `repair_composer_managed_modules()` is deleted.
+What is left to land is much smaller:
 
-### Move 3 — PRs 1 and 2 (remove d10, land the lint fixes)
+- **DEV-1156** (open, `#13`): `entrypoint.sh` + `lib/common.sh` — already a real PR (148 + 37
+  lines). `lib/common.sh` is identical to `decom2` HEAD, but `entrypoint.sh` is **not**: `#13` still
+  carries the old comment justifying the patch step by "a volume-mounted contrib tree (which shadows
+  the image's build-time composer-patches)", which `dc8030d` corrected on `decom2` to the
+  bind-mounted `modules/custom` tree. Fold that one comment hunk into `#13` before merging it, or
+  the branch ships wording this whole re-cut exists to remove.
+- **DEV-1158** (not yet opened): `after-start.sh` — deprecated-path cleanup, permission hardening
+  (the M4 fix), and cache rebuild. No delete, no install, no loop.
 
-- **Action:** open both against `master`.
-- **Expect:** both merge with no CI (the workflow does not exist yet).
-- **Likely failure:** none plausible. PR 1 deletes a file nothing references; PR 2 is prose.
-- **Countermove:** n/a. These are the two safe moves; do them first to build confidence.
-
-### Move 4 — PR 3 (npm tooling and ignores)
-
-- **Action:** land `package.json`, the single lockfile, `.markdownlint.json`, `.dockerignore`,
-  and the `.gitignore` changes **minus** the `!.github/workflows/` unlock.
-- **Expect:** `master` gains the tooling; nothing reads it yet.
-- **Likely failure:** the `.gitignore` split is fumbled and the workflow unlock rides along early.
-  Cause: it is one hunk in the original diff. Signals: `git check-ignore .github/workflows/ci.yml`
-  returns nothing on `master` before PR 9.
-- **Countermove:** split the hunk deliberately. The AI-tooling and scratch entries
-  (`.vscode`, `graphify-out`, `docs/.temp`, `backlog.jsonl`) belong here; the workflow unlock
-  belongs with PR 9 and nowhere else.
-
-### Move 5 — PR 4 (startup scripts) — the highest-risk move
-
-- **Action:** land `entrypoint.sh`, `after-start.sh`, `lib/common.sh` **with B1, B2, M4, M8 and
-  M10 fixed**, inert (nothing copies them into an image yet).
-- **Expect:** files on `master`; no image behaviour changes; the PR body carries the `rm -rf`
-  blast-radius section.
-- **Likely failure:** the B1 fix is made by changing the *hardening* to leave `33:33` instead of
-  changing the *heuristic*. Cause: it is the smaller diff. Signals: `harden_mounted_volumes` no
-  longer chowns code to `root:www-data`. That silently reverts the security posture the
-  hardening exists for — code becomes writable by the web server user.
-- **Countermove:** fix the heuristic, not the hardening. The correct comparison target is the
-  post-hardening state `0:${www_gid}`.
-- **Second-order:** with B2 fixed to a temp-dir-and-swap, disk pressure becomes a new failure mode
-  on EFS-backed volumes — the repair now needs headroom for a second copy of a module tree. Log
-  free space before the swap and skip the repair rather than half-completing it.
+- **Expect:** both land inert; nothing copies them into an image yet (that is `DEV-1160`'s job).
+- **Likely failure:** a sequencing bug, not a destructive one. `after-start.sh` calls
+  `read_wrapper_version()`, which is defined in `lib/common.sh` — a function `DEV-1156`
+  introduces. If `DEV-1158` is branched off `master` before `DEV-1156` merges, it is missing a
+  function its own startup path depends on.
+- **Countermove:** branch `DEV-1158` off `DEV-1156`'s branch, not off `master`, until `DEV-1156`
+  merges.
+- **Why the risk profile actually dropped:** the two things that made this "the highest-risk move"
+  were a live restart-triggered `rm -rf` over ~38 module directories and a swallowed install
+  failure. Neither exists any more. What remains is a chmod-ordering script with a proven
+  precedent — `8992ba1` already landed the same content on `decom2` — and no delete of anything
+  with real content in it. The one `rm -rf` left in `after-start.sh` (line 49) removes a single
+  deprecated file, not a directory tree.
 
 ### Fork F1 — Does the advisory suppression survive P3?
 
 - **Trigger:** build once at 11.4.5 with `policy.advisories.ignore-id` removed.
-  - **Clean build** to Route A: delete the block; PR 6 loses one ⚠️ and one disclosure.
+  - **Clean build** to Route A: delete the block; `DEV-1160` loses one ⚠️ and one disclosure.
   - **Build fails on advisories** to Route B: keep the block, rewrite the rationale comment to
-    cite 11.4.5 and the live upstream issue, add an expiry date, and disclose it in PR 6.
+    cite 11.4.5 and the live upstream issue, add an expiry date, and disclose it in `DEV-1160`.
 
-### Move 6 — PR 5 (patch engine)
+### Move — DEV-1159 (patch engine)
 
 - **Action:** land `lib/patches.sh` (with the `patch(1)` fallback deleted per M9) and the patch
   file.
 - **Expect:** files on `master`; `entrypoint.sh` already sources them but no image ships yet.
 - **Likely failure:** the patch is validated only by "it applies", not by "it applies to the
-  version we pin". `auto_node_translate:3.0.2` is pinned at `Dockerfile:101`; a patch cut against
+  version we pin". `auto_node_translate:3.0.2` is pinned at `Dockerfile:108`; a patch cut against
   a different revision may apply with fuzz and silently corrupt the module.
 - **Countermove:** validate with a strict `git apply --check` against an unpacked 3.0.2, and fail
   the build rather than fuzz. Record the validated module version in the PR body.
 
-### Move 7 — PR 6 (rebuild the image)
+### Move — DEV-1160 (rebuild the image)
 
-- **Action:** land the 3-stage Dockerfile at 11.4.5-v1.
+- **Action:** land the 3-stage Dockerfile at 11.4.5-v2.
 - **Expect:** `docker build .` succeeds on amd64; the container serves HTTP 200; the contrib tree
-  contains the pinned module set.
-- **Likely failure:** the build succeeds locally from cache but fails clean. Cause: `jsonapi_extras:3.x-dev@dev`
-  resolves to a different commit than the cached one (M1). Signals: a `composer require` conflict
-  that did not occur yesterday, or a smoke test that passes locally and fails in CI.
+  contains the pinned package set.
+- **Likely failure:** the build succeeds locally from cache but fails clean. Cause:
+  `jsonapi_extras:3.x-dev@dev` resolves to a different commit than the cached one (M1). Signals: a
+  `composer require` conflict that did not occur yesterday, or a smoke test that passes locally
+  and fails in CI.
 - **Countermove:** pin `jsonapi_extras` in this PR. If it genuinely must float, say so explicitly
-  in the PR body next to the guzzle disclosure, and accept that PR 9's smoke test is a flake
-  source.
-- **Second-order:** this is the first PR where `master` ships a runtime that runs `after-start.sh`.
-  Even with B1 fixed, the first real deployment is the moment the repair logic meets a live EFS
-  volume. Do not merge PR 6 on a Friday.
+  in the PR body next to the guzzle disclosure.
+- **Second-order:** this is the first PR where `master` ships a runtime that runs
+  `after-start.sh` against a live, bind-mounted `web/sites`. The chmod pass is idempotent and
+  touches no contrib code — nothing here is destructive — but it is still the first time this
+  logic meets a real multisite tree. Do not merge on a Friday.
 
-### Move 8 — PR 7 (multi-arch)
+### Move — DEV-1161 (multi-arch)
 
-- **Action:** parameterise the AWS CLI archive by `$TARGETARCH` and confirm both arches build.
-- **Expect:** `docker buildx build --platform linux/amd64,linux/arm64 .` succeeds.
+- **Action:** parameterise the AWS CLI archive by `$TARGETARCH` and confirm both arches build, or
+  delete the `TARGETARCH` scaffolding if nobody can name a deployment target — see
+  [What's still open](#whats-still-open).
+- **Expect (fix route):** `docker buildx build --platform linux/amd64,linux/arm64 .` succeeds.
 - **Likely failure:** arm64 fails somewhere *else* than the AWS CLI — the GD rebuild or a contrib
   module with a native dependency. Cause: nobody has ever built this arm64. Signals: a compile
   error in the `docker-php-ext-install gd` layer.
-- **Countermove:** this PR's scope is "make the multi-arch claim true **or** withdraw it." If
-  arm64 cannot build, delete the `TARGETARCH` args rather than shipping aspirational ones, and
-  say so. A false capability claim is worse than no claim.
+- **Countermove:** this PR's scope is "make the multi-arch claim true **or** withdraw it." A false
+  capability claim is worse than no claim.
 
-### Move 9 — PR 8 (documentation)
+### Move — DEV-1162 (documentation)
 
-- **Action:** land the docs, resynced to 11.4.5-v1 per P4.
-- **Expect:** lint stays clean; the prose matches the image on `master`.
-- **Likely failure:** the resync misses a reference, so the docs claim 11.4.5 in most places and
-  11.4.1 in one. Signals: `grep -rn "11\.4\.[0-4]" docs/ README.md` returns a hit.
-- **Countermove:** make that grep the PR's acceptance check, not a reading pass.
+This move already happened for real, not as a future action. `47f8cad` resynced the docs to
+11.4.5-v2 on `decom2`. Verified: `npx markdownlint-cli2` reports 0 errors, and
+`grep -rn --exclude=seam-review.md "11\.4\.[0-4]" docs/ README.md` returns exactly two hits, both
+correct historical references to the 11.4.1 CVE fix (`docs/prd.md:143`,
+`docs/architectural-plan.md:463`), not drift. The exclusion matters: this file's own commit-weight
+table legitimately cites those older versions, so an unfiltered grep returns eight hits and reads
+like drift when it is not.
+What remains is opening `DEV-1162` as a real PR against `master`, not writing the content.
 
-### Move 10 — PR 9 (CI, last)
+### Move — DEV-1163 (CI, last)
 
 - **Action:** land `ci.yml` **with** the `!.github/workflows/` unlock in the same commit, plus
   buildx (M5) and the strengthened smoke test (M7).
@@ -499,47 +489,62 @@ most likely failure with its signals, and the pre-decided countermove.
   workflow. Verify with `git check-ignore -v .github/workflows/ci.yml` returning nothing before
   committing.
 - **Second-order:** the strengthened smoke test is the first thing that has ever exercised
-  `after-start.sh`. Expect it to fail on the first run and to surface at least one defect beyond
-  B1/B2. Budget for that rather than treating a red first run as a CI misconfiguration.
+  `after-start.sh`. Expect it to surface at least one defect the reworked M7 did not anticipate.
+  Budget for that rather than treating a red first run as a CI misconfiguration.
 
 ### Assumptions (flagged, not silently resolved)
 
 - **(VARIABLE: arm64 is actually wanted.)** The plan assumes multi-arch is a real requirement. If
-  nothing consumes an arm64 image, PR 7 should delete the `TARGETARCH` work instead of fixing it.
-- **(VARIABLE: the sibling `@bl2` hub repos' visibility.)** P1's link fix depends on whether those
-  repos are reachable to reviewers.
+  nothing consumes an arm64 image, `DEV-1161` should delete the `TARGETARCH` work instead of
+  fixing it.
 - **(VARIABLE: whether a live advisory affects 11.4.5.)** Fork F1 resolves this empirically, but
-  if one exists, the urgency framing rev 1 attached to Option C returns and PR 6 may need to jump
-  the queue.
+  if one exists, `DEV-1160` may need to jump the queue.
 - **Assumed and acted on:** that the two lockfiles agreeing today makes P2 a safe delete. Verified
-  for the three declared devDependencies; not verified transitively.
+  for the three declared devDependencies; not verified transitively. This has held across the
+  whole re-land so far without incident, and is still unresolved as a live item (M6).
 
 ### Abort conditions
 
 Stop and escalate rather than improvising if any of these occur:
 
 - `decom2` HEAD does not build on amd64 during recon — the whole plan rests on a buildable branch.
-- The B1 fix cannot be made without weakening `harden_mounted_volumes` — that is a security
-  trade-off, not an implementation detail.
-- Two consecutive CI runs fail in PR 9 for reasons not covered by a countermove above.
+- Two consecutive CI runs fail in `DEV-1163` for reasons not covered by a countermove above.
 - Any move requires force-pushing, closing, or deleting an already-open PR in this chain.
+  `DEV-1157` / `#14` needs a human to close it — that is a deliberate exception this document
+  flags, not something to do unprompted.
+- A future `dmsm` stack-template change reintroduces a whole-`modules` bind mount before this is
+  caught — stop and reopen the module-repair question rather than silently re-adding a runtime
+  repair step here. This is ADR 0005's own recorded consequence.
 
 ### Verification (what "done" means)
 
-- All nine PRs merged; `git diff master..decom2` is empty apart from this document.
-- `npx markdownlint-cli@0.49.0 $(git ls-files '*.md')` exits 0 on `master`.
+- `DEV-1156` through `DEV-1163` merged (`DEV-1154`, `DEV-1155` already are); `git diff
+  master...decom2` empty apart from this document once `decom2` is rebased onto the merged
+  baseline.
+- No runtime `composer install` or `composer require` exists anywhere in `scripts/`:
+  `grep -rn "composer install\|composer require" scripts/` returns nothing (verified today).
+- `web/robots.txt` is absent from a freshly built image:
+  `docker run --rm <image> test -f /opt/drupal/web/robots.txt` exits nonzero.
+- `settings.php` is not world-readable: `stat -c '%a' web/sites/*/settings.php` reports `440`.
+- The completion marker is named for the current wrapper version:
+  `/tmp/after-start-<version>.complete`, where `<version>` is `package.json`'s `version` field
+  (`11.4.5-v2` today), read via `read_wrapper_version()` in `lib/common.sh`.
+- `npx markdownlint-cli2 $(git ls-files '*.md')` exits 0 (verified today).
+- **B3 is closed one way or the other.** Either
+  `docker buildx build --platform linux/amd64,linux/arm64 .` succeeds, or the `TARGETARCH`
+  scaffolding is deliberately removed and that decision is recorded. B3 is the only surviving
+  blocker, so a checklist that does not mention it can be fully satisfied while the image still
+  makes a false multi-platform claim.
 - CI green on `master`: lint, build, smoke.
-- A container started from the `master` image survives **two consecutive restarts** without
-  re-running the module repair — the direct regression test for B1.
-- `stat -c '%a' web/sites/*/settings.php` is not world-readable — the regression test for M4.
-- Exactly one lockfile is tracked.
+- Exactly one lockfile tracked (M6 — still open, still two today).
 
 ---
 
 ## What the reviewers said
 
-Three independent critics reviewed the rev 1 document **and** the current tree. Every claim below
-was re-verified against source before being folded in.
+Three independent critics reviewed the rev 1 document **and** the tree at that time. Every claim
+below was re-verified against source before being folded in. This section records what was found;
+what actually happened to each finding since is noted separately.
 
 ### Seam-critic — verdict: `SET-STALE`, all three options re-cut
 
@@ -569,6 +574,13 @@ was re-verified against source before being folded in.
 - Credited `docs/architecture.md:323` for being honest that the hashes are not machine-verified —
   that honesty is what made B4 quick to confirm.
 
+**Disposition (2026-08-24).** B1, B2 and B4 were not fixed using any of the above recommendations
+— comparing against post-hardening ownership, a temp-dir-and-swap restore, or real startup
+verification. The function all three findings live in, `repair_composer_managed_modules()`, was
+deleted outright (`cf5791b`) once the repo owner confirmed the mount contract makes the volume
+mask it defended against structurally impossible. See
+[ADR 0005](adr/0005-remove-runtime-module-repair.md). B3 remains open exactly as found.
+
 ### Devil's advocate on strategy — verdict: both premises wrong, go hybrid
 
 - **Decisive finding:** Options A and B have **converged**. B's only edge is a bundling knob, not
@@ -585,16 +597,27 @@ was re-verified against source before being folded in.
 
 ---
 
-## The one decision left
+## What's still open
 
-Everything above is settled except this: **fix the four blockers as part of the re-land, or land
-the pile as-is and fix forward?**
+Rev 2's dilemma — fix the four blockers during the re-land, or land the pile as-is and fix forward
+— is settled and mostly moot. Three of the four blockers do not exist any more, and the fourth
+(B3) already has an obvious fix path written into its own finding. What is genuinely still open is
+two separate things, not one.
 
-The plan as written assumes the former — B1, B2, M4, M8 and M10 are fixed inside PR 4, and B3
-inside PR 7. That is the recommendation: B1 and B2 together are a data-destruction path that
-triggers on an ordinary container restart, and landing them knowingly puts a known-destructive
-runtime on `master` behind nothing but a PR-body disclosure.
+**Is arm64 actually required?** Nothing in this repository states a consumer for an `arm64`
+image. `aef57f0` added the `TARGETARCH` scaffolding and per-arch apt cache ids without recording
+who asked for it or where an arm64 image would run. If nobody can name a deployment target,
+`DEV-1161` should delete the `TARGETARCH` args and the multi-arch claim rather than spend effort
+fixing an unauthenticated x86-pinned `curl | install` for an architecture nothing needs. If a real
+target exists, `DEV-1161` fixes B3 as planned. This is the one place in the plan where "ship the
+fix" and "ship the deletion" are both live options, and the answer depends on information this
+document does not have.
 
-The alternative — land the pile faithfully, then fix in follow-ups — is defensible only if getting
-`decom2` off a branch is more urgent than the restart loop is dangerous. Given that the CVE
-urgency which once justified haste has expired, it probably is not.
+**The contrib pin is now load-bearing on the mount contract alone.** ADR 0005 already records the
+consequence: removing the runtime repair step means the version pins in the Dockerfile's
+`composer require` block are no longer reinforced by anything that runs after the image is built.
+Today that is fine — the mount contract genuinely never bind-mounts over `web/modules/contrib`.
+But nothing in this repository can stop a future `dmsm` stack-template change from reintroducing a
+whole-`modules` mount. If that ever happens, the pin is silently defeated and there is no code left
+here to notice. Enforcing that has to live in the `dmsm` repo, not this one — this document cannot
+resolve it, only name it as the thing to watch.
