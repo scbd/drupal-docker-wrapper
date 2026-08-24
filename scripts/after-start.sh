@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # After-start script: runs once the web server answers (see entrypoint.sh)
-# Handles deprecated-path cleanup, permission hardening, and cache rebuild
+# Handles deprecated-path cleanup and permission hardening
 # This script is forked from entrypoint.sh and runs in the background
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -192,23 +192,6 @@ ensure_sites_files_permissions() {
 # Code should be root:www-data (read-only), not www-data:www-data (writable)
 # Only sites/*/files directories should be writable by www-data
 
-# Rebuild Drupal cache
-rebuild_cache() {
-  local project_root
-  project_root="$(find_project_root)" || return 0
-
-  if [[ -f "${project_root}/web/sites/default/settings.php" ]]; then
-    log "Rebuilding Drupal cache..."
-    if command -v /opt/drupal/vendor/bin/drush >/dev/null 2>&1; then
-      gosu www-data /opt/drupal/vendor/bin/drush -r "${project_root}/web" cache:rebuild || log "drush cr failed; continuing."
-    elif [[ -f "${project_root}/web/core/rebuild.php" ]]; then
-      gosu www-data php "${project_root}/web/core/rebuild.php" || log "core rebuild.php failed; continuing."
-    fi
-  else
-    log "No Drupal settings.php found, skipping cache rebuild."
-  fi
-}
-
 main() {
   # The marker gates only the work that lands on a mounted volume and therefore
   # survives the container that did it. Everything else runs on every start.
@@ -255,10 +238,6 @@ main() {
     fi
     log "Background permission hardening complete."
   ) &
-
-  # 3. Rebuild cache (runs as www-data via gosu). Ungated: the cache is cheap to
-  # rebuild next to the EFS walk, and a redeployed image wants it rebuilt.
-  rebuild_cache
 
   log "After-start tasks for ${AFTER_START_VERSION} dispatched."
 }

@@ -24,8 +24,8 @@ auditability. The deployed Swarm stack bind-mounts only five paths per site - `c
 `modules/custom`, `sites`, `drush`, and `temp` - so core, contrib, and `vendor` always come from the
 image and cannot drift at runtime. The image starts in two phases: Apache comes up immediately while
 a background after-start script does the remaining privilege-sensitive provisioning (cleaning
-deprecated paths, hardening mounted-volume and `sites` permissions, rebuilding caches) once per
-container per image version. Other bioland repos build their sites on top of this image; the custom
+deprecated paths, hardening mounted-volume and `sites` permissions) once per container per image
+version. Other bioland repos build their sites on top of this image; the custom
 modules and the bioland-head Nuxt frontend layer onto it without being part of it.
 
 ## User Stories
@@ -111,11 +111,18 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 - **Per-version marker gating, scoped to the mounted volume.** Only the expensive `sites/`
   permission pass (`ensure_sites_files_permissions`) is gated. It is guarded by a marker on the
   bind-mounted `temp/` directory, falling back to `/tmp` when no volume is mounted, named for the
-  version read from `package.json`. Deprecated-path cleanup, image-resident code hardening
-  (`harden_mounted_volumes`), and the cache rebuild all run on every start regardless: the first two
-  because they must, the last because it is cheap. Stale markers are cleared from both the resolved
-  marker directory and a legacy `/tmp` marker, so an image upgrade re-runs the gated pass. See
-  `docs/adr/0004-...` and `docs/adr/0006-...`.
+  version read from `package.json`. Deprecated-path cleanup and image-resident code hardening
+  (`harden_mounted_volumes`) both run on every start regardless, because they act on the image's own
+  code and must. Stale markers are cleared from both the resolved marker directory and a legacy
+  `/tmp` marker, so an image upgrade re-runs the gated pass. See `docs/adr/0004-...` and
+  `docs/adr/0006-...`.
+- **No cache rebuild in the container.** `after-start.sh` used to run `drush cache:rebuild` with no
+  site URI, which bootstraps only the default site, gated on `web/sites/default/settings.php`
+  existing, which a multisite install may not have. On this image's only real deployment topology
+  (multisite) it was a no-op or rebuilt one arbitrary site, so it was removed. A per-site cache
+  rebuild is still required after a module or patch change; it is now a deploy-process
+  responsibility, run per site through the mounted drush aliases (`@lk`, `@be`, ...). See
+  `docs/adr/0007-...`.
 - **No runtime composer invocation.** The runtime module-repair step that used to compare installed
   contrib against `composer.lock` and re-run `composer install` was removed, along with the
   `DRUPAL_SKIP_MODULE_REPAIR` and `DRUPAL_AFTER_START_FORCE_MODULE_REPAIR` variables that controlled
@@ -125,7 +132,9 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 - **Privilege separation and permission hardening.** Code is `root:www-data` read-only (dirs 755,
   files 644), `temp/` is `root:root` 700, every `.htaccess` is forced to 644, `settings*.php` and
   `services*.yml` under `web/sites` are tightened to `root:www-data` 440, and only `sites/*/files`
-  is writable (`www-data:www-data` 775). Composer and drush run as www-data via gosu. The previous
+  is writable (`www-data:www-data` 775). `gosu` is preserved in the image so an operator can run
+  drush as www-data by hand (e.g. `gosu www-data vendor/bin/drush @lk cache:rebuild`); no script
+  invokes it. The previous
   `ensure_runtime_ownership` (which made code www-data-writable) was removed for security, and the
   blanket `chmod -R 755` that used to run over all of `web/sites` was replaced by the 644/440 split
   above because it left `settings.php` world-readable and world-executable.

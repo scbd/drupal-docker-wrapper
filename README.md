@@ -17,7 +17,7 @@ modules preinstalled to speed up local development and CI/CD.
 - Composer patching enabled (see `Dockerfile` for applied patches) – deterministic (lockfile retained).
 - Preinstalled CLI tools: curl, gosu, patch, git.
 - Healthcheck stub (override as needed).
-- **After-start background script** for deferred heavy operations (cleanup, permission hardening, cache rebuild).
+- **After-start background script** for deferred heavy operations (cleanup, permission hardening).
 
 ## Entrypoint & After-Start Architecture
 
@@ -53,7 +53,14 @@ until it answers with any HTTP status, or the timeout elapses, then runs `after-
    (`www-data:www-data` 775). This is the expensive recursive pass over the EFS-backed `sites/` tree, so it is
    **gated by a per-version marker on the mounted `temp/` volume** (falling back to `/tmp` when no volume is
    mounted): once per wrapper version per volume, not once per container start.
-4. **Rebuilds Drupal cache** via `drush cache:rebuild` (as www-data via gosu). Runs on every start.
+
+There is no cache rebuild step in after-start. It was removed because it never worked on multisite: it ran
+`drush cache:rebuild` with no site URI, which only bootstraps the default site, and it was gated on
+`web/sites/default/settings.php` existing, which a multisite install may not have at all. See
+[adr/0007](docs/adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md). A cache rebuild is still
+required after an image change that ships new module code, but it is now an operator/deploy responsibility, run
+per site through the mounted drush aliases (`@lk`, `@be`, …; see [Volume mounts](#volume-mounts)), for example
+`gosu www-data vendor/bin/drush @lk cache:rebuild` for each site.
 
 ### Environment Variables
 
@@ -64,7 +71,7 @@ until it answers with any HTTP status, or the timeout elapses, then runs `after-
 | `DRUPAL_AFTER_START_READY_URL` | `http://127.0.0.1/` | URL the readiness probe polls. |
 
 > **Note:** The after-start script **is active**; it is forked by `entrypoint.sh` and these variables take effect.
-> Deprecated-path cleanup, image-code hardening, and cache rebuild run on every start. Only the `web/sites`
+> Deprecated-path cleanup and image-code hardening run on every start. Only the `web/sites`
 > permission pass is marker-gated: once per wrapper version per mounted volume, falling back to `/tmp` when no
 > volume is mounted. The entrypoint *patch-application* step (Phase 1) is also active and runs on every start
 > (idempotent).
@@ -82,15 +89,15 @@ docker run -d --name drupal -p 8080:80 \
 This approach ensures:
 
 - Fast container startup (Apache available immediately)
-- Heavy permission-hardening and cache-rebuild work don't block healthchecks
-- Privilege separation (cache rebuild runs as www-data via gosu; only permission hardening needs root)
+- Heavy permission-hardening work doesn't block healthchecks
+- Privilege separation (permission hardening needs root; drush can be run as www-data via gosu by hand)
 
 ### Script Structure
 
 ```text
 scripts/
 ├── entrypoint.sh      # Main entrypoint (thin - patches + fork after-start)
-├── after-start.sh     # Background script (cleanup, perms, cache)
+├── after-start.sh     # Background script (cleanup, permission hardening)
 └── lib/
     ├── common.sh      # Shared utilities (log, find_project_root)
     └── patches.sh     # Patch application logic
@@ -241,7 +248,9 @@ docker exec -it drupal bash -lc "vendor/bin/drush si -y standard \
 1. Edit the version in the `composer require` line inside the `with-modules` stage of the `Dockerfile`.
 2. Rebuild & tag the image.
 3. Deploy the new image (ensure code is not volume-mounted).
-4. The after-start script rebuilds caches automatically once it detects the web server answering after startup.
+4. Rebuild the cache for every site, through its mounted drush alias, for example
+   `gosu www-data vendor/bin/drush @lk cache:rebuild`. Nothing in the image does this automatically; see
+   [adr/0007](docs/adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 ## Security & hardening notes
 
@@ -249,7 +258,8 @@ docker exec -it drupal bash -lc "vendor/bin/drush si -y standard \
 - **Build context**: `.dockerignore` excludes `.env*`, `patches/old/`, git/CI files from the image.
 - **Permissions**: Directories 755, files 644; `settings*.php`/`services*.yml` tightened to 440 `root:www-data`; only
   `sites/*/files` stays writable (775).
-- **Privilege separation**: Cache rebuild runs as www-data via gosu; permission hardening needs root to `chown`.
+- **Privilege separation**: Permission hardening needs root to `chown`; drush can be run as www-data via `gosu` by
+  hand for operator tasks such as a per-site cache rebuild.
 - **Healthcheck**: Simple HTTP probe; customize to a lightweight status endpoint for production.
 - **Lockfile**: We retain `composer.lock` (do NOT delete) ensuring deterministic dependency resolution.
 - **Patch provenance**: Patches declared inline in `Dockerfile`; archived in `patches/old/` when no longer needed.
@@ -293,7 +303,7 @@ Add an automated scheduled rebuild (weekly) to pick up upstream security patches
 | High CVE count in scan | Outdated base image packages | Rebuild with newer base tag; maybe dist-upgrade |
 | Drush missing | Stage caching issue | Clear build cache (`--no-cache`) and rebuild |
 | After-start not running | Check logs for errors | `docker logs <container>` - look for `[after-start]` messages |
-| Exit code 137 at startup | OOM during cache rebuild | Cache rebuild runs as www-data; check container memory limits |
+| Stale service container/routes after a module bump | No cache rebuild ran after deploy | Rebuild the cache per site via its drush alias, e.g. `drush @lk cache:rebuild` |
 
 Note: If you override the container USER or execute composer in a derived image, make sure to:
 

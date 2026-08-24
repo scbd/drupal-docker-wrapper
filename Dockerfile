@@ -10,7 +10,7 @@ ARG TARGETARCH
 WORKDIR /opt/drupal
 
 # System packages (keep minimal) - cache apt metadata
-# gosu is needed for dropping privileges in entrypoint
+# gosu is kept so drush can be run as www-data by hand (e.g. gosu www-data vendor/bin/drush @lk cr)
 # jq is needed for reading the wrapper version from package.json (after-start marker)
 # nano is a text editor for debugging inside the container
 # default-mysql-client is needed for database operations and drush sql commands

@@ -62,11 +62,12 @@ _Avoid_: init script, startup script.
 
 **After-start phase**:
 Phase two. `after-start.sh` runs once the entrypoint's readiness poll confirms the web server is
-answering (or the poll times out), doing deprecated-path cleanup, permission hardening, and cache
-rebuild. Cleanup, image-code hardening, and cache rebuild run on every start. Only the `sites/`
-permission pass is gated, once per wrapper version per mounted volume.
+answering (or the poll times out), doing deprecated-path cleanup and permission hardening. Cleanup
+and image-code hardening run on every start. Only the `sites/` permission pass is gated, once per
+wrapper version per mounted volume. There is no cache rebuild step; see **Cache rebuild**.
 _Avoid_: post-start hook, background job, cron, module repair (removed - see **Module repair**),
-"runs once per container" (only the `sites/` pass does; the rest run every start).
+cache rebuild (removed - see **Cache rebuild**), "runs once per container" (only the `sites/` pass
+does; the rest run every start).
 
 **Version marker**:
 The file `<marker-dir>/after-start-<version>.complete`, where `<marker-dir>` is the project's
@@ -85,6 +86,16 @@ A former after-start step that compared installed contrib versions against `comp
 repair.
 _Avoid_: describing this as present, opt-in, or a fallback.
 
+**Cache rebuild** _(removed from after-start)_:
+A former after-start step that ran `drush cache:rebuild` with no site URI. Removed: without a URI
+drush bootstraps only the default site, and the step was also gated on
+`web/sites/default/settings.php` existing, which a multisite install may not have. On the only
+deployment topology this image actually runs under (multisite), it was either a no-op or it rebuilt
+one arbitrary site. See [adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
+The need for a cache rebuild after an image change has not gone away; it is now an operator/deploy
+responsibility, run per site through the mounted drush aliases (see **Mount contract**).
+_Avoid_: describing this as still present in `after-start.sh`, or as automatic.
+
 **Permission hardening**:
 The after-start step that makes code read-only (`root:www-data`, dirs 755 / files 644), locks
 `temp/` to `root:root` 700, tightens `settings*.php` and `services*.yml` to `440` root:www-data,
@@ -92,9 +103,9 @@ fixes every `.htaccess` to 644, and leaves only `sites/*/files` writable (`www-d
 _Avoid_: chown pass, lockdown, securing.
 
 **Privilege separation**:
-The rule that root is used only to fix permissions and bind port 80, after which composer, Drush,
-and cache work run as www-data (via gosu). Code is owned read-only by `root:www-data`, never
-writable by the web user.
+The rule that root is used only to fix permissions and bind port 80, after which drush and other
+operator commands run as www-data (via gosu, invoked by hand). Code is owned read-only by
+`root:www-data`, never writable by the web user.
 _Avoid_: drop privileges, sandboxing.
 
 **Patch application**:

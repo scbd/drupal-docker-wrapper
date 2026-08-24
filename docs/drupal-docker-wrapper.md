@@ -35,10 +35,11 @@ projects actually depend on is a small, stable surface:
   image; they are overlaid at runtime under `modules/custom`. The wrapper guarantees they land in a
   Drupal that already has its contrib dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, etc.)
   pinned and present.
-- **The after-start guarantees.** On every container start, the wrapper cleans up deprecated paths,
-  hardens image-resident code permissions (read-only `root:www-data`), and rebuilds the Drupal
-  cache. The `sites/*/files` permission pass runs once per image version per mounted volume, not on
-  every start. The custom modules can assume this baseline; they do not run it themselves.
+- **The after-start guarantees.** On every container start, the wrapper cleans up deprecated paths
+  and hardens image-resident code permissions (read-only `root:www-data`). The `sites/*/files`
+  permission pass runs once per image version per mounted volume, not on every start. The custom
+  modules can assume this baseline; they do not run it themselves. There is no cache rebuild in
+  this list; see [adr/0007](../adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 What is intentionally *not* in the interface: the build stages and the dormant startup patch
 mechanism. Those are implementation, hidden behind the surface above.
@@ -55,16 +56,18 @@ mechanism. Those are implementation, hidden behind the surface above.
 See this repo's [adr/0002](../adr/0002-pin-contrib-modules-in-a-dedicated-build-stage.md),
 [adr/0003](../adr/0003-two-phase-startup-entrypoint-and-after-start.md),
 [adr/0004](../adr/0004-gate-after-start-with-a-per-version-marker.md),
-[adr/0005](../adr/0005-remove-runtime-module-repair.md), and
-[adr/0006](../adr/0006-move-after-start-marker-to-the-mounted-volume.md) for the decisions behind
-these.
+[adr/0005](../adr/0005-remove-runtime-module-repair.md),
+[adr/0006](../adr/0006-move-after-start-marker-to-the-mounted-volume.md), and
+[adr/0007](../adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md) for the decisions
+behind these.
 
 ## Workflow transitions
 
 The wrapper owns no part of the content / comment / translation workflow. It owns one **operational**
 state machine: the after-start provisioning run. Only the `sites/` permission pass is gated, by a
-marker on the mounted `temp/` volume (falling back to `/tmp` when no volume is mounted); cleanup,
-image-code hardening, and the cache rebuild run on every start.
+marker on the mounted `temp/` volume (falling back to `/tmp` when no volume is mounted); cleanup and
+image-code hardening run on every start. There is no cache-rebuild state; see
+[adr/0007](../adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 ```mermaid
 stateDiagram-v2
@@ -73,13 +76,11 @@ stateDiagram-v2
   Hardening --> Skipped: marker for this version exists on the mounted volume
   Hardening --> VolumeWork: no marker (clear stale markers first)
   VolumeWork --> Complete: sites/ permissions set, touch marker
-  Cleanup --> Rebuilding: drush cache:rebuild (every start)
   Skipped --> [*]
   Complete --> [*]
-  Rebuilding --> [*]
 ```
 
 This machine is self-contained: it touches no content state and is invisible over JSON:API, so the
 hub's Workflow Statuses do not include it. A later container on the same volume short-circuits the
-`sites/` pass to `Skipped`; an image upgrade clears stale markers and re-runs it. Cleanup, hardening,
-and the cache rebuild happen on every container regardless.
+`sites/` pass to `Skipped`; an image upgrade clears stale markers and re-runs it. Cleanup and
+hardening happen on every container regardless.

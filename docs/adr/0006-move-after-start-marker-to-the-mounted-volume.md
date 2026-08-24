@@ -27,18 +27,20 @@ container that mounts that volume. The gate becomes what it was always meant to 
 wrapper version, per volume, not once per container.
 
 This decision also narrows the gate itself, and that narrowing is the more important half of it.
-Only `ensure_sites_files_permissions` is gated by the marker. `harden_mounted_volumes`,
-`cleanup_deprecated_paths`, and `rebuild_cache` all still run on every container start,
-unconditionally. `harden_mounted_volumes` fixes ownership on `web/core`, `web/themes`,
-`web/profiles`, `web/libraries`, `web/modules`, and `vendor` - paths that live in the image, not on
-a mounted volume. The `Dockerfile` ends with `chown -R www-data:www-data /opt/drupal`, so a fresh
-container starts with its own code owned by, and writable by, the web server. Gating that hardening
-pass behind a persisted marker would leave every container after the first one on a given volume
+Only `ensure_sites_files_permissions` is gated by the marker. `harden_mounted_volumes` and
+`cleanup_deprecated_paths` still run on every container start, unconditionally.
+`harden_mounted_volumes` fixes ownership on `web/core`, `web/themes`, `web/profiles`,
+`web/libraries`, `web/modules`, and `vendor` - paths that live in the image, not on a mounted
+volume. The `Dockerfile` ends with `chown -R www-data:www-data /opt/drupal`, so a fresh container
+starts with its own code owned by, and writable by, the web server. Gating that hardening pass
+behind a persisted marker would leave every container after the first one on a given volume
 un-hardened: the marker would say "done" for a volume, while a brand-new container's own image
 layer had never been touched. That is a security regression, not an optimization, so
 `harden_mounted_volumes` stays ungated. `cleanup_deprecated_paths` acts on the image's own web root
-for the same reason, and `rebuild_cache` is cheap enough next to the EFS walk that gating it buys
-nothing.
+for the same reason. A third step, `rebuild_cache`, also ran ungated at the time of this decision.
+It has since been removed from `after-start.sh` entirely, because it never rebuilt more than one
+site on the multisite installs this image actually runs as. See
+[adr/0007](0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 The marker is now written from inside the background subshell, after
 `ensure_sites_files_permissions` returns, not from the foreground. Writing it earlier recorded the

@@ -403,8 +403,9 @@ What is left to land is much smaller:
   the image's build-time composer-patches)", which `dc8030d` corrected on `decom2` to the
   bind-mounted `modules/custom` tree. Fold that one comment hunk into `#13` before merging it, or
   the branch ships wording this whole re-cut exists to remove.
-- **DEV-1158** (not yet opened): `after-start.sh` — deprecated-path cleanup, permission hardening
-  (the M4 fix), and cache rebuild. No delete, no install, no loop.
+- **DEV-1158** (not yet opened): `after-start.sh` — deprecated-path cleanup and permission
+  hardening (the M4 fix). No delete, no install, no loop, no cache rebuild: the multisite-broken
+  `rebuild_cache` step is gone; see [ADR 0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 - **Expect:** both land inert; nothing copies them into an image yet (that is `DEV-1160`'s job).
 - **Likely failure:** a sequencing bug, not a destructive one. `after-start.sh` calls
@@ -530,7 +531,8 @@ Stop and escalate rather than improvising if any of these occur:
   volume, falling back to `/tmp` when no volume is mounted: `after-start-<version>.complete`, where
   `<version>` is `package.json`'s `version` field (`11.4.5-v2` today), read via
   `read_wrapper_version()` in `lib/common.sh`. It marks only the `sites/` permission pass as done
-  for this version on this volume; image-code hardening and the cache rebuild run on every start.
+  for this version on this volume; image-code hardening runs on every start. There is no cache
+  rebuild in `after-start.sh` any more — see [ADR 0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 - `npx markdownlint-cli2 $(git ls-files '*.md')` exits 0 (verified today).
 - **B3 is closed one way or the other.** Either
   `docker buildx build --platform linux/amd64,linux/arm64 .` succeeds, or the `TARGETARCH`

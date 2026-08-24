@@ -63,10 +63,13 @@ contrib dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, `auto_node_tran
 pinned and present.
 
 **4. The after-start guarantees.**
-On every container start, the wrapper cleans deprecated paths, hardens image-resident code
-permissions (`root:www-data`, read-only), and rebuilds the Drupal cache. The expensive
-`sites/*/files` permission pass runs once per image version per mounted volume, not on every
-start. Custom modules can assume this baseline; they do not run it themselves.
+On every container start, the wrapper cleans deprecated paths and hardens image-resident code
+permissions (`root:www-data`, read-only). The expensive `sites/*/files` permission pass runs once
+per image version per mounted volume, not on every start. Custom modules can assume this baseline;
+they do not run it themselves. There is no cache rebuild in this list: a per-site
+`drush cache:rebuild` after a module or patch change is a deploy-process responsibility, not
+something the container does for itself. See
+[adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 What is **not** in the interface: the build stages and the startup patch-application internals.
 Those are implementation, hidden behind the surface above.
@@ -223,7 +226,6 @@ flowchart TB
   asf -->|sources| common
   asf --> cleanup[cleanup_deprecated_paths]
   asf --> harden[harden_mounted_volumes +\nensure_sites_files_permissions]
-  asf --> cache[rebuild_cache via drush]
 ```
 
 `lib/patches.sh` is fully implemented (multi-strategy `patch`, applied markers) and its entry point
@@ -276,7 +278,6 @@ sequenceDiagram
   participant Entry as entrypoint.sh (root)
   participant Apache as Apache / upstream entrypoint
   participant After as after-start.sh (background)
-  participant Drush
 
   Docker->>Entry: ENTRYPOINT [apache2-foreground]
   Note over Entry: apply_patches_if_present runs, best-effort (missing engine or a failed patch does not block Apache)
@@ -294,13 +295,13 @@ sequenceDiagram
       After->>After: clear stale markers, ensure_sites_files_permissions, touch marker
     end
   end
-  After->>Drush: cache:rebuild (every start, as www-data via gosu)
 ```
 
 The fork design means the healthcheck never waits on after-start. Apache is exec'd immediately and
 serving independently of it. Only the `sites/` permission pass is gated by the version marker, so a
-container restart on the same volume skips the EFS-wide walk; cleanup, image-code hardening, and
-the cache rebuild run every time.
+container restart on the same volume skips the EFS-wide walk; cleanup and image-code hardening run
+every time. There is no cache rebuild step; see
+[adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 ### CI build and release
 
@@ -375,8 +376,8 @@ temporarily suppressed for BL-695 (remove per Drupal #3599842).
 tree read-only (`root:www-data`, dirs 755 / files 644), locks `temp/` to `root:root` 700, forces
 every `.htaccess` to 644, tightens `settings*.php`/`services*.yml` under `web/sites` to `440`
 `root:www-data`, and leaves only `sites/*/files` writable (`www-data:www-data` 775). Root is used
-only for this hardening step and for binding port 80; all Drush work runs as `www-data` via
-`gosu`.
+only for this hardening step and for binding port 80. No script runs Drush; `gosu` is kept in the
+image so an operator can run it as `www-data` by hand (e.g. a per-site cache rebuild).
 
 **CI / release adapter.**
 GitHub Actions: `lint` (markdownlint + hadolint) gates `build-test` (docker build + smoke-test). The
@@ -397,9 +398,9 @@ not guarantee that after-start succeeded; check `[after-start]` log lines.
 | **Reproducibility** | Same digest from same source | Every contrib module and Drush pinned inline in the `Dockerfile`; `composer.lock` retained |
 | **Determinism** | No implicit upgrades | Single consolidated `composer require` with exact versions; lockfile kept; `composer outdated --direct` used for visibility |
 | **Startup latency** | Apache serving in seconds | Thin entrypoint forks after-start and exec-chains the upstream entrypoint immediately |
-| **Idempotent provisioning** | Expensive EFS work once per version per volume; image hardening every start | The `sites/` permission pass is gated by a marker on the mounted `temp/` volume (falls back to `/tmp`); image-code hardening, cleanup, and the cache rebuild are ungated |
-| **Health observability** | Container healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with 40 s start period; never blocked by after-start's cleanup, hardening, or Drush cache rebuild |
-| **Security / least privilege** | Web user cannot write code | root only for permission fixes and port bind; then `www-data` via gosu; code `root:www-data` read-only; only `sites/*/files` writable |
+| **Idempotent provisioning** | Expensive EFS work once per version per volume; image hardening every start | The `sites/` permission pass is gated by a marker on the mounted `temp/` volume (falls back to `/tmp`); image-code hardening and cleanup are ungated |
+| **Health observability** | Container healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with 40 s start period; never blocked by after-start's cleanup or hardening |
+| **Security / least privilege** | Web user cannot write code | root only for permission fixes and port bind; code `root:www-data` read-only; only `sites/*/files` writable; `gosu` kept for an operator to run drush as `www-data` by hand |
 | **Supply-chain control** | Auditable, explicit deps | Versions visible in `Dockerfile`; `modules-versions.txt` manifest; `.dockerignore` excludes `.env*` and archived patches |
 | **Build efficiency** | Fast incremental rebuilds | Multi-stage build; module installs isolated; apt and Composer caches mounted; build-only tools purged |
 
@@ -417,6 +418,7 @@ Recorded in [docs/adr/](adr/). Rationale lives there; not restated here.
 | [0004](adr/0004-gate-after-start-with-a-per-version-marker.md) | Gate the `sites/` permission pass with a version-stamped marker so restarts skip it and upgrades re-run it |
 | [0005](adr/0005-remove-runtime-module-repair.md) | Remove runtime module repair and the per-module integrity hashes, since the mount contract never bind-mounts contrib and it cannot drift |
 | [0006](adr/0006-move-after-start-marker-to-the-mounted-volume.md) | Move the marker off `/tmp` onto the mounted `temp/` volume so the gate is per-volume, not per-container; narrow the gate to only the `sites/` pass |
+| [0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md) | Remove the after-start cache rebuild: it never rebuilt more than one site on a multisite install; a per-site rebuild is now a deploy-process responsibility |
 
 ---
 
@@ -424,36 +426,33 @@ Recorded in [docs/adr/](adr/). Rationale lives there; not restated here.
 
 The wrapper owns no part of the content, comment, or translation workflow — those are the
 `drupal-module-bioland` spoke's domain. It owns one operational state machine: the after-start
-provisioning run. Only the `sites/` permission pass is gated by the version marker; cleanup,
-image-code hardening, and the cache rebuild run on every start.
+provisioning run. Only the `sites/` permission pass is gated by the version marker; cleanup and
+image-code hardening run on every start. There is no cache-rebuild state; see
+[adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 ```mermaid
 stateDiagram-v2
   [*] --> Cleanup: container start (cleanup_deprecated_paths, every start)
   Cleanup --> fork_state <<fork>>
   fork_state --> Hardening: backgrounded; harden_mounted_volumes (every start)
-  fork_state --> Rebuilding: drush cache:rebuild (every start)
   Hardening --> Skipped: marker for this version exists on the volume
   Hardening --> VolumeWork: no marker (clear stale markers first)
   VolumeWork --> Complete: ensure_sites_files_permissions, then touch marker
   Skipped --> [*]
   Complete --> [*]
-  Rebuilding --> [*]
 ```
 
 | State | Transition trigger | Notes |
 | --- | --- | --- |
 | `Cleanup` | Container start | `cleanup_deprecated_paths` (e.g. `robots.txt`); defence-in-depth backstop, runs every start |
 | `Hardening` | Forked at `Cleanup` exit, runs in background | Image-resident code permission hardening; runs every start regardless of any marker |
-| `Rebuilding` | Forked at `Cleanup` exit, runs in foreground | `drush cache:rebuild` as `www-data` via `gosu`; runs every start |
 | `Skipped` | Marker for this version already exists on the volume | Later container on the same volume; `sites/` pass skipped |
 | `VolumeWork` | No marker found on the volume | Clears any stale `after-start-*.complete` markers first, on the resolved marker directory and `/tmp` |
 | `Complete` | `sites/` pass done | Marker file touched on the volume; subsequent starts on the same volume and version → `Skipped` |
 
 This machine is self-contained: it touches no content state and is invisible over JSON:API. A
 later container on the same volume short-circuits the `sites/` pass to `Skipped`; an image upgrade
-clears stale markers and re-runs it. Cleanup, hardening, and the cache rebuild happen every start
-regardless.
+clears stale markers and re-runs it. Cleanup and hardening happen every start regardless.
 
 ---
 
@@ -465,6 +464,7 @@ regardless.
 | **Release publishing is off** | CI / ops | The GitHub Actions `push-images` job is commented out. Tagged releases build and test but do not push to Docker Hub. Re-enable with Docker Hub credentials when ready to publish. |
 | **No scheduled weekly rebuild** | CI | README calls for a weekly rebuild to pick up upstream base-image security patches; the automation is not yet in place. |
 | **No end-to-end test crossing the mount seam** | cross | No automated test verifies that the custom-module overlay + contrib pin produce a working Drupal site end-to-end. The smoke test checks PHP, Drush, and key module directories but not a live page render. |
+| **Cache rebuild moved to deploy process** | deploy process | The container no longer rebuilds the Drupal cache. A deploy that changes module or patch code must run a per-site `drush cache:rebuild` through the mounted drush aliases itself; nothing in this image catches a deploy that skips it. See [adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md). |
 
 ---
 

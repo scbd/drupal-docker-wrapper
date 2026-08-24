@@ -22,15 +22,16 @@ version changes and the old marker no longer matches.
 > **Amended 2026-08-24.** The marker's location and the scope of what it gates were revised. See
 > [adr/0006](0006-move-after-start-marker-to-the-mounted-volume.md) for where the marker lives now,
 > why, and why the gate covers only the `sites/` permission pass rather than all of after-start's
-> work.
+> work. The cache rebuild referenced below as part of the gated work was later removed entirely,
+> not just re-scoped; see [adr/0007](0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
 ## Considered Options
 
-- **No gate, run every start** - rejected: redoes permission hardening and a cache rebuild on every
-  restart, which is slow and pointless when nothing changed.
+- **No gate, run every start** - rejected: redoes permission hardening on every restart, which is
+  slow and pointless when nothing changed.
 - **A version-less marker** (`/tmp/after-start.complete`) - rejected: an upgraded image would see the
-  old marker and skip the work it needs to run, so the permission pass and cache rebuild would not
-  re-run for the new version.
+  old marker and skip the work it needs to run, so the permission pass would not re-run for the new
+  version.
 - **A persistent on-disk marker** (in the project tree) - rejected: provisioning should re-run on a
   new container, and a persisted marker would survive into containers that need the work.
 
