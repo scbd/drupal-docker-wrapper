@@ -121,7 +121,8 @@ harden_mounted_volumes() {
 }
 
 # Ensure correct permissions on sites directories
-# First locks down entire sites/ (settings.php, etc.), then unlocks only */files
+# Locks down all of sites/ (dirs 755, files 644), tightens settings/services
+# files to 440, then unlocks only */files for uploads
 ensure_sites_files_permissions() {
   # Must be root to change ownership
   [[ "$(id -u)" -eq 0 ]] || return 0
@@ -132,10 +133,20 @@ ensure_sites_files_permissions() {
   local sites_base="${project_root}/web/sites"
   [[ -d "${sites_base}" ]] || return 0
 
-  log "Locking down sites directory (root:www-data, 755)..."
+  log "Locking down sites directory (root:www-data, dirs=755, files=644)..."
   # First: lock down entire sites directory (settings.php, site configs, etc.)
   chown -R root:www-data "${sites_base}" 2>/dev/null || true
-  chmod -R 755 "${sites_base}" 2>/dev/null || true
+  # Directories need the execute bit for traversal; files must not have it. A
+  # blanket `chmod -R 755` here left settings.php world-readable and
+  # world-executable, exposing the database credentials and the hash salt.
+  find "${sites_base}" -type d -exec chmod 755 {} + 2>/dev/null || true
+  find "${sites_base}" -type f -exec chmod 644 {} + 2>/dev/null || true
+
+  # Credentials are readable by root and the web server group only.
+  log "Restricting settings and services files (root:www-data, 440)..."
+  find "${sites_base}" -type f \
+    \( -name 'settings*.php' -o -name 'services*.yml' \) \
+    -exec chmod 440 {} + 2>/dev/null || true
 
   log "Unlocking sites/*/files directories for uploads (www-data:www-data, 775)..."
   # Then: unlock only */files directories for web server uploads
