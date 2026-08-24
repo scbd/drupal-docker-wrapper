@@ -57,11 +57,12 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
     (only `custom.ini`, `modules/custom`, `sites`, `drush`, and `temp` are mounted per site), so
     that a stack definition never widens the mount to the whole `modules` tree and puts the mount
     in competition with the image's own pinned `web/core`, `web/modules/contrib`, and `vendor`.
-13. As a platform engineer, I want the heavy startup work (permission hardening and cache rebuild)
-    to run once per container per image version, so that an ordinary container restart does not
-    repeat it needlessly.
-14. As a platform engineer, I want an upgrade to a new image version to re-run the one-time work, so
-    that permissions are re-hardened and the cache is rebuilt against the new image's contents.
+13. As a platform engineer, I want the expensive `sites/` permission pass to run once per image
+    version per mounted volume, so that an ordinary container restart or scale-out does not repeat
+    the EFS-wide walk needlessly.
+14. As a platform engineer, I want an image upgrade to re-run the volume-backed permission work, so
+    that a volume carrying an older version's marker gets re-hardened under the new image's
+    contents.
 15. As a CI maintainer, I want the image built and smoke-tested on every change, so that a broken
     build or a missing key module is caught before release.
 16. As a CI maintainer, I want markdown and Dockerfile linting in the pipeline, so that the docs and
@@ -107,10 +108,14 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
   probe URL are overridable via `DRUPAL_AFTER_START_READY_TIMEOUT` (default 120s),
   `DRUPAL_AFTER_START_READY_INTERVAL` (default 2s), and `DRUPAL_AFTER_START_READY_URL`, each
   validated with a logged fallback on a bad value. See `docs/adr/0003-...`.
-- **Per-version marker gating.** After-start work (deprecated-path cleanup, permission hardening,
-  cache rebuild) is gated on `/tmp/after-start-<version>.complete`, with the version read from
-  `package.json`. Stale markers are cleared on a new run so an image upgrade re-runs the one-time
-  work. See `docs/adr/0004-...`.
+- **Per-version marker gating, scoped to the mounted volume.** Only the expensive `sites/`
+  permission pass (`ensure_sites_files_permissions`) is gated. It is guarded by a marker on the
+  bind-mounted `temp/` directory, falling back to `/tmp` when no volume is mounted, named for the
+  version read from `package.json`. Deprecated-path cleanup, image-resident code hardening
+  (`harden_mounted_volumes`), and the cache rebuild all run on every start regardless: the first two
+  because they must, the last because it is cheap. Stale markers are cleared from both the resolved
+  marker directory and a legacy `/tmp` marker, so an image upgrade re-runs the gated pass. See
+  `docs/adr/0004-...` and `docs/adr/0006-...`.
 - **No runtime composer invocation.** The runtime module-repair step that used to compare installed
   contrib against `composer.lock` and re-run `composer install` was removed, along with the
   `DRUPAL_SKIP_MODULE_REPAIR` and `DRUPAL_AFTER_START_FORCE_MODULE_REPAIR` variables that controlled
@@ -163,8 +168,10 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
   blocking install could take minutes).
 - A fresh `docker run` of a published tag yields an installed contrib tree whose versions match
   `modules-versions.txt` and the inline `Dockerfile` pins (0 drift).
-- After-start runs its one-time work exactly once per container per image version (the marker is
-  present after the first run; a restart logs "already complete").
+- The `sites/` permission pass runs exactly once per image version per mounted volume (the marker
+  is present on the volume after the first run; a later container on the same volume logs "already
+  done on this volume" and skips it). Image-resident code hardening still runs on every container
+  start.
 - CI fails the build when a key module directory is missing or PHP/Drush are broken (smoke test
   catches it before any publish).
 - 0 occurrences of the web user being able to write to `web/core`, `web/modules`, `vendor`, or any

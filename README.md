@@ -39,17 +39,21 @@ The `entrypoint.sh` script runs immediately at container start:
 ### Phase 2: After-Start (once the web server answers)
 
 The `entrypoint.sh` fork polls the local web server (`DRUPAL_AFTER_START_READY_URL`, default `http://127.0.0.1/`)
-until it answers with any HTTP status, or the timeout elapses, then runs `after-start.sh` in the background. It is
-**gated by a per-version marker** (`/tmp/after-start-<version>.complete`, version read from `package.json`) so its
-one-time work runs once per container start per image version:
+until it answers with any HTTP status, or the timeout elapses, then runs `after-start.sh` in the background:
 
 1. **Cleans up deprecated paths** (e.g. a scaffolded `web/robots.txt`). This is defense in depth: the build already
    excludes `robots.txt` from drupal-scaffold and deletes the upstream image's copy, so this step is normally a no-op.
-2. **Hardens permissions** (in the background): code dirs (`web/core`, `modules`, `themes`, `profiles`, `libraries`,
-   `vendor`) `root:www-data` 755/644; `temp/` `root:root` 700; all `.htaccess` 644. Under `web/sites`, directories are
-   755, files 644, `settings*.php`/`services*.yml` are tightened to 440 `root:www-data`, and only `sites/*/files` is
-   left writable (`www-data:www-data` 775).
-3. **Rebuilds Drupal cache** via `drush cache:rebuild` (as www-data via gosu).
+   Runs on every start.
+2. **Hardens image-resident code permissions** (in the background, every start): `web/core`, `modules`, `themes`,
+   `profiles`, `libraries`, `vendor` become `root:www-data` 755/644; `temp/` becomes `root:root` 700; all `.htaccess`
+   become 644. These paths ship inside the image, which the build leaves `www-data`-owned, so this step runs on
+   every container start regardless of any marker.
+3. **Locks down `web/sites`** (in the same background pass): directories 755, files 644, `settings*.php` /
+   `services*.yml` tightened to 440 `root:www-data`, and only `sites/*/files` left writable
+   (`www-data:www-data` 775). This is the expensive recursive pass over the EFS-backed `sites/` tree, so it is
+   **gated by a per-version marker on the mounted `temp/` volume** (falling back to `/tmp` when no volume is
+   mounted): once per wrapper version per volume, not once per container start.
+4. **Rebuilds Drupal cache** via `drush cache:rebuild` (as www-data via gosu). Runs on every start.
 
 ### Environment Variables
 
@@ -59,9 +63,10 @@ one-time work runs once per container start per image version:
 | `DRUPAL_AFTER_START_READY_INTERVAL` | `2` | Seconds between readiness probes. |
 | `DRUPAL_AFTER_START_READY_URL` | `http://127.0.0.1/` | URL the readiness probe polls. |
 
-> **Note:** The after-start script **is active** — it is forked by `entrypoint.sh` and these variables take effect.
-> Its cleanup, permission-hardening, and cache-rebuild work runs once per container start per image version
-> (marker-gated). The entrypoint *patch-application* step (Phase 1) is also active and runs on every start
+> **Note:** The after-start script **is active**; it is forked by `entrypoint.sh` and these variables take effect.
+> Deprecated-path cleanup, image-code hardening, and cache rebuild run on every start. Only the `web/sites`
+> permission pass is marker-gated: once per wrapper version per mounted volume, falling back to `/tmp` when no
+> volume is mounted. The entrypoint *patch-application* step (Phase 1) is also active and runs on every start
 > (idempotent).
 
 Example usage:

@@ -9,15 +9,20 @@ origin: standalone
 
 # 0004. Gate after-start work with a per-version marker file
 
-The after-start phase guards its one-time work with a marker file
-`/tmp/after-start-<version>.complete`, where the version is read from the image's bundled
-`package.json`. If the marker exists, after-start exits early. On a fresh run it first deletes any
-stale `after-start-*.complete` markers, does its work, then touches the current marker.
+The after-start phase guards its expensive, one-time work with a marker file named
+`after-start-<version>.complete`, where the version is read from the image's bundled
+`package.json`. If the marker exists, after-start skips the work it guards. On a fresh run it first
+deletes any stale `after-start-*.complete` markers, does its work, then touches the current marker.
 
-We gate on a version-stamped marker so the expensive work (permission hardening, cache rebuild) runs
-once per container per image version. A plain container restart on the same image skips the work; an
-upgrade to a new image version re-runs it, because the bundled `package.json` version changes and
-the old marker no longer matches.
+We gate on a version-stamped marker so the expensive permission work runs once per image version
+rather than on every restart. A plain container restart skips the gated work when the marker is
+already there; an upgrade to a new image version re-runs it, because the bundled `package.json`
+version changes and the old marker no longer matches.
+
+> **Amended 2026-08-24.** The marker's location and the scope of what it gates were revised. See
+> [adr/0006](0006-move-after-start-marker-to-the-mounted-volume.md) for where the marker lives now,
+> why, and why the gate covers only the `sites/` permission pass rather than all of after-start's
+> work.
 
 ## Considered Options
 
@@ -31,8 +36,14 @@ the old marker no longer matches.
 
 ## Consequences
 
-- The marker lives in `/tmp`, so it is per-container and naturally resets when a new container
-  starts - which is the intended idempotency boundary (once per container per version).
+- ~~The marker lives in `/tmp`, so it is per-container and naturally resets when a new container
+  starts - which is the intended idempotency boundary (once per container per version).~~
+  **Superseded by [adr/0006](0006-move-after-start-marker-to-the-mounted-volume.md).** `/tmp` sits
+  in the container's writable layer, so this was never the useful boundary it looked like: it meant
+  the expensive `sites/` permission pass re-ran on every redeploy and every scaled-out replica
+  against the same EFS volume. The marker now lives on the mounted `temp/` volume, falling back to
+  `/tmp` only when no volume is mounted, so it is per-volume and per-version. The gate now also
+  covers only the `sites/` permission pass, not all of after-start's work.
 - The version comes from `package.json`, read through the shared `read_wrapper_version` helper in
   `lib/common.sh` so the entrypoint and after-start derive the gate from one implementation. That
   file must be bumped in lockstep with the image so the gate distinguishes versions correctly. The

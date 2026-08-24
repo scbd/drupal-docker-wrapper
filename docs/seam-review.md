@@ -526,9 +526,11 @@ Stop and escalate rather than improvising if any of these occur:
 - `web/robots.txt` is absent from a freshly built image:
   `docker run --rm <image> test -f /opt/drupal/web/robots.txt` exits nonzero.
 - `settings.php` is not world-readable: `stat -c '%a' web/sites/*/settings.php` reports `440`.
-- The completion marker is named for the current wrapper version:
-  `/tmp/after-start-<version>.complete`, where `<version>` is `package.json`'s `version` field
-  (`11.4.5-v2` today), read via `read_wrapper_version()` in `lib/common.sh`.
+- The completion marker is named for the current wrapper version and lives on the mounted `temp/`
+  volume, falling back to `/tmp` when no volume is mounted: `after-start-<version>.complete`, where
+  `<version>` is `package.json`'s `version` field (`11.4.5-v2` today), read via
+  `read_wrapper_version()` in `lib/common.sh`. It marks only the `sites/` permission pass as done
+  for this version on this volume; image-code hardening and the cache rebuild run on every start.
 - `npx markdownlint-cli2 $(git ls-files '*.md')` exits 0 (verified today).
 - **B3 is closed one way or the other.** Either
   `docker buildx build --platform linux/amd64,linux/arm64 .` succeeds, or the `TARGETARCH`

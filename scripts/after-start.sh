@@ -24,7 +24,25 @@ LOG_PREFIX="after-start"
 # read_wrapper_version lives in lib/common.sh so the entrypoint and this script
 # derive the gate from one implementation.
 AFTER_START_VERSION="$(read_wrapper_version)"
-MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
+
+# Where the completion marker lives. Prefer the bind-mounted temp/ directory:
+# /tmp sits in the container's writable layer, so every redeploy and every
+# scale-out saw a fresh /tmp and re-ran the recursive pass over the EFS-backed
+# sites/ tree. temp/ is mounted from EFS, so the gate becomes once per wrapper
+# version per volume, which is what it was always meant to mean.
+#
+# Falls back to /tmp when temp/ is absent. The image does not create it, so its
+# presence is a reliable signal that the volume is actually mounted.
+resolve_marker_dir() {
+  local project_root
+  if project_root="$(find_project_root)" && [[ -d "${project_root}/temp" ]]; then
+    printf '%s\n' "${project_root}/temp"
+  else
+    printf '%s\n' /tmp
+  fi
+}
+MARKER_DIR="$(resolve_marker_dir)"
+MARKER_FILE="${MARKER_DIR}/after-start-${AFTER_START_VERSION}.complete"
 
 # Clean up deprecated paths
 #
@@ -192,35 +210,57 @@ rebuild_cache() {
 }
 
 main() {
-  # Skip if already completed for this version
+  # The marker gates only the work that lands on a mounted volume and therefore
+  # survives the container that did it. Everything else runs on every start.
+  #
+  # This is deliberately not a blanket gate. harden_mounted_volumes fixes
+  # ownership on web/core, web/themes, web/profiles, web/libraries and vendor,
+  # which live in the image, and the build leaves them owned by www-data
+  # (Dockerfile: chown -R www-data:www-data /opt/drupal). A fresh container
+  # therefore starts with its code writable by the web server. Skipping that on
+  # the strength of a persisted marker would leave every container after the
+  # first un-hardened, so it stays ungated.
+  local skip_volume_work=0
   if [[ -f "${MARKER_FILE}" ]]; then
-    log "After-start for ${AFTER_START_VERSION} already complete, exiting."
-    exit 0
+    log "Volume-backed work for ${AFTER_START_VERSION} already done on this volume; skipping it."
+    skip_volume_work=1
+  else
+    # Purge markers from other versions so an upgrade re-runs. Both locations are
+    # swept: a container that ran a pre-move wrapper left its marker in /tmp.
+    rm -f "${MARKER_DIR}"/after-start-*.complete 2>/dev/null || true
+    if [[ "${MARKER_DIR}" != "/tmp" ]]; then
+      rm -f /tmp/after-start-*.complete 2>/dev/null || true
+    fi
   fi
-
-  # Clean up old version marker files to ensure fresh runs on upgrades
-  rm -f /tmp/after-start-*.complete 2>/dev/null || true
 
   log "Starting after-start tasks for ${AFTER_START_VERSION}..."
 
-  # 1. Cleanup deprecated paths
+  # 1. Cleanup deprecated paths (acts on the image's web root; every start)
   cleanup_deprecated_paths
 
   # 2. Harden permissions in background (non-blocking for large multisites)
   # 775 on files/ is fine - Apache serves JS/CSS/images as static, execute bit irrelevant
   # Real PHP security is .htaccess blocking execution in files/ directories
+  #
+  # The marker is written from inside this subshell, after the gated pass
+  # returns. Writing it in the foreground would record the work as finished
+  # while the recursive walk was still running, and a container killed in that
+  # window would leave a marker for work that never completed.
   (
     harden_mounted_volumes
-    ensure_sites_files_permissions
+    if (( skip_volume_work == 0 )); then
+      ensure_sites_files_permissions
+      touch "${MARKER_FILE}" 2>/dev/null \
+        || log "WARNING: could not write ${MARKER_FILE}; volume work re-runs next start."
+    fi
     log "Background permission hardening complete."
   ) &
 
-  # 3. Rebuild cache (runs as www-data via gosu)
+  # 3. Rebuild cache (runs as www-data via gosu). Ungated: the cache is cheap to
+  # rebuild next to the EFS walk, and a redeployed image wants it rebuilt.
   rebuild_cache
 
-  # Mark complete
-  touch "${MARKER_FILE}"
-  log "After-start tasks for ${AFTER_START_VERSION} complete."
+  log "After-start tasks for ${AFTER_START_VERSION} dispatched."
 }
 
 main "$@"

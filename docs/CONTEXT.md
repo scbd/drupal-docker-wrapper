@@ -63,14 +63,20 @@ _Avoid_: init script, startup script.
 **After-start phase**:
 Phase two. `after-start.sh` runs once the entrypoint's readiness poll confirms the web server is
 answering (or the poll times out), doing deprecated-path cleanup, permission hardening, and cache
-rebuild. Gated so its one-time work runs once per container start per image version.
-_Avoid_: post-start hook, background job, cron, module repair (removed - see **Module repair**).
+rebuild. Cleanup, image-code hardening, and cache rebuild run on every start. Only the `sites/`
+permission pass is gated, once per wrapper version per mounted volume.
+_Avoid_: post-start hook, background job, cron, module repair (removed - see **Module repair**),
+"runs once per container" (only the `sites/` pass does; the rest run every start).
 
 **Version marker**:
-The file `/tmp/after-start-<version>.complete` whose presence tells the after-start phase its
-one-time work is already done for this image version. The version is read from `package.json`. On a
-new run, stale markers from other versions are cleared first.
-_Avoid_: lock file (that collides with composer.lock), sentinel, flag file.
+The file `<marker-dir>/after-start-<version>.complete`, where `<marker-dir>` is the project's
+mounted `temp/` directory when it exists, falling back to `/tmp` when it does not. Its presence
+tells the after-start phase the `sites/` permission pass is already done for this image version, on
+this volume. The version is read from `package.json`. On a new run, stale markers are cleared from
+both the resolved marker directory and, when that directory is not `/tmp`, the legacy `/tmp`
+location too.
+_Avoid_: lock file (that collides with composer.lock), sentinel, flag file, per-container marker (it
+is per-volume now).
 
 **Module repair** _(removed)_:
 A former after-start step that compared installed contrib versions against `composer.lock` and ran

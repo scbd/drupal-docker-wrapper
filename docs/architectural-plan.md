@@ -63,9 +63,10 @@ contrib dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, `auto_node_tran
 pinned and present.
 
 **4. The after-start guarantees.**
-Once per container start per image version, the wrapper: (a) cleans deprecated paths, (b) hardens
-permissions (code read-only `root:www-data`; only `sites/*/files` writable), and (c) rebuilds the
-Drupal cache. Custom modules can assume this baseline; they do not run it themselves.
+On every container start, the wrapper cleans deprecated paths, hardens image-resident code
+permissions (`root:www-data`, read-only), and rebuilds the Drupal cache. The expensive
+`sites/*/files` permission pass runs once per image version per mounted volume, not on every
+start. Custom modules can assume this baseline; they do not run it themselves.
 
 What is **not** in the interface: the build stages and the startup patch-application internals.
 Those are implementation, hidden behind the surface above.
@@ -253,7 +254,7 @@ erDiagram
     string path "web/modules/contrib/<name>"
   }
   VERSION_MARKER {
-    string file "/tmp/after-start-<version>.complete"
+    string file "temp/after-start-<version>.complete, falls back to /tmp"
   }
 ```
 
@@ -281,27 +282,25 @@ sequenceDiagram
   Note over Entry: apply_patches_if_present runs, best-effort (missing engine or a failed patch does not block Apache)
   Entry->>After: fork (poll http://127.0.0.1/ until ready, then run after-start) &
   Entry->>Apache: exec docker-entrypoint apache2-foreground
-  Apache-->>Docker: serving on :80 — HEALTHCHECK passes
+  Apache-->>Docker: serving on :80, HEALTHCHECK passes
 
   Note over After: once the readiness poll succeeds (or times out), in background
-  After->>After: marker /tmp/after-start-<version>.complete present?
-  alt marker exists
-    After-->>After: exit 0 (already done this version)
-  else first run for this version
-    After->>After: clear stale version markers
-    After->>After: cleanup_deprecated_paths (robots.txt; defence-in-depth backstop)
-    par background hardening
-      After->>After: harden_mounted_volumes + sites/*/files perms
+  After->>After: cleanup_deprecated_paths (robots.txt, defence-in-depth backstop, every start)
+  par background pass
+    After->>After: harden_mounted_volumes (every start, image code)
+    alt marker on temp/ or /tmp present for this version
+      After->>After: skip sites/ permission pass
+    else no marker
+      After->>After: clear stale markers, ensure_sites_files_permissions, touch marker
     end
-    After->>Drush: cache:rebuild (as www-data via gosu)
-    After->>After: touch marker
   end
+  After->>Drush: cache:rebuild (every start, as www-data via gosu)
 ```
 
 The fork design means the healthcheck never waits on after-start. Apache is exec'd immediately and
-serving independently of it; the forked task polls for that readiness and then runs the
-privilege-sensitive work once, gated by the version marker so a container restart on the same
-image skips it.
+serving independently of it. Only the `sites/` permission pass is gated by the version marker, so a
+container restart on the same volume skips the EFS-wide walk; cleanup, image-code hardening, and
+the cache rebuild run every time.
 
 ### CI build and release
 
@@ -398,7 +397,7 @@ not guarantee that after-start succeeded; check `[after-start]` log lines.
 | **Reproducibility** | Same digest from same source | Every contrib module and Drush pinned inline in the `Dockerfile`; `composer.lock` retained |
 | **Determinism** | No implicit upgrades | Single consolidated `composer require` with exact versions; lockfile kept; `composer outdated --direct` used for visibility |
 | **Startup latency** | Apache serving in seconds | Thin entrypoint forks after-start and exec-chains the upstream entrypoint immediately |
-| **Idempotent provisioning** | One-time work per container per version | After-start gated by `/tmp/after-start-<version>.complete`; stale markers cleared on new version |
+| **Idempotent provisioning** | Expensive EFS work once per version per volume; image hardening every start | The `sites/` permission pass is gated by a marker on the mounted `temp/` volume (falls back to `/tmp`); image-code hardening, cleanup, and the cache rebuild are ungated |
 | **Health observability** | Container healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with 40 s start period; never blocked by after-start's cleanup, hardening, or Drush cache rebuild |
 | **Security / least privilege** | Web user cannot write code | root only for permission fixes and port bind; then `www-data` via gosu; code `root:www-data` read-only; only `sites/*/files` writable |
 | **Supply-chain control** | Auditable, explicit deps | Versions visible in `Dockerfile`; `modules-versions.txt` manifest; `.dockerignore` excludes `.env*` and archived patches |
@@ -415,8 +414,9 @@ Recorded in [docs/adr/](adr/). Rationale lives there; not restated here.
 | [0001](adr/0001-record-architecture-decisions.md) | Adopt Architecture Decision Records |
 | [0002](adr/0002-pin-contrib-modules-in-a-dedicated-build-stage.md) | Pin contrib modules at exact versions in a dedicated build stage rather than floating constraints or a separate manifest |
 | [0003](adr/0003-two-phase-startup-entrypoint-and-after-start.md) | Two-phase startup: thin entrypoint chains Apache immediately; after-start does heavy provisioning in the background |
-| [0004](adr/0004-gate-after-start-with-a-per-version-marker.md) | Gate after-start one-time work with a version-stamped marker in `/tmp` so restarts skip it and upgrades re-run it |
+| [0004](adr/0004-gate-after-start-with-a-per-version-marker.md) | Gate the `sites/` permission pass with a version-stamped marker so restarts skip it and upgrades re-run it |
 | [0005](adr/0005-remove-runtime-module-repair.md) | Remove runtime module repair and the per-module integrity hashes, since the mount contract never bind-mounts contrib and it cannot drift |
+| [0006](adr/0006-move-after-start-marker-to-the-mounted-volume.md) | Move the marker off `/tmp` onto the mounted `temp/` volume so the gate is per-volume, not per-container; narrow the gate to only the `sites/` pass |
 
 ---
 
@@ -424,35 +424,36 @@ Recorded in [docs/adr/](adr/). Rationale lives there; not restated here.
 
 The wrapper owns no part of the content, comment, or translation workflow — those are the
 `drupal-module-bioland` spoke's domain. It owns one operational state machine: the after-start
-provisioning run, gated by the version marker.
+provisioning run. Only the `sites/` permission pass is gated by the version marker; cleanup,
+image-code hardening, and the cache rebuild run on every start.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Pending: container start
-  Pending --> Skipped: marker for this version exists
-  Pending --> Running: no marker (clear stale markers first)
-  Running --> Cleanup: cleanup_deprecated_paths
-  Cleanup --> Hardening: forked, backgrounded (no wait)
-  Cleanup --> Rebuilding: drush cache:rebuild
-  Rebuilding --> Complete: touch marker
-  Hardening --> [*]
+  [*] --> Cleanup: container start (cleanup_deprecated_paths, every start)
+  Cleanup --> fork_state <<fork>>
+  fork_state --> Hardening: backgrounded; harden_mounted_volumes (every start)
+  fork_state --> Rebuilding: drush cache:rebuild (every start)
+  Hardening --> Skipped: marker for this version exists on the volume
+  Hardening --> VolumeWork: no marker (clear stale markers first)
+  VolumeWork --> Complete: ensure_sites_files_permissions, then touch marker
   Skipped --> [*]
   Complete --> [*]
+  Rebuilding --> [*]
 ```
 
 | State | Transition trigger | Notes |
 | --- | --- | --- |
-| `Pending` | Container start | Always enters here |
-| `Skipped` | Marker for this version already exists | Container restart on the same image; work skipped |
-| `Running` | No marker found | Clears any stale `after-start-*.complete` markers first |
-| `Cleanup` | Entered from `Running` | `cleanup_deprecated_paths` (e.g. `robots.txt`); defence-in-depth backstop, not the primary mechanism |
-| `Hardening` | Forked at `Cleanup` exit, runs in background | Permission hardening; cache rebuild does not wait on it |
-| `Rebuilding` | Forked at `Cleanup` exit, runs in foreground | `drush cache:rebuild` as `www-data` via `gosu` |
-| `Complete` | Rebuild done | Marker file touched; subsequent restarts on the same version → `Skipped` |
+| `Cleanup` | Container start | `cleanup_deprecated_paths` (e.g. `robots.txt`); defence-in-depth backstop, runs every start |
+| `Hardening` | Forked at `Cleanup` exit, runs in background | Image-resident code permission hardening; runs every start regardless of any marker |
+| `Rebuilding` | Forked at `Cleanup` exit, runs in foreground | `drush cache:rebuild` as `www-data` via `gosu`; runs every start |
+| `Skipped` | Marker for this version already exists on the volume | Later container on the same volume; `sites/` pass skipped |
+| `VolumeWork` | No marker found on the volume | Clears any stale `after-start-*.complete` markers first, on the resolved marker directory and `/tmp` |
+| `Complete` | `sites/` pass done | Marker file touched on the volume; subsequent starts on the same volume and version → `Skipped` |
 
 This machine is self-contained: it touches no content state and is invisible over JSON:API. A
-container restart on the same image short-circuits to `Skipped`; a new image version clears stale
-markers and re-runs the full sequence.
+later container on the same volume short-circuits the `sites/` pass to `Skipped`; an image upgrade
+clears stale markers and re-runs it. Cleanup, hardening, and the cache rebuild happen every start
+regardless.
 
 ---
 
@@ -475,9 +476,11 @@ checklist.
 - [ ] Apache passes its `HEALTHCHECK` within the 40-second start period on a cold `docker run`.
 - [ ] A fresh `docker run` of a published tag yields a contrib tree whose versions match
       `modules-versions.txt` and the inline `Dockerfile` pins — 0 drift.
-- [ ] After-start runs its one-time work exactly once per container per image version: the marker is
-      present after the first run; a restart logs "already complete" and exits early.
-- [ ] A new image version causes after-start to re-run (old marker no longer matches).
+- [ ] The `sites/` permission pass runs exactly once per image version per mounted volume: the
+      marker is present on the volume after the first run; a later container on the same volume
+      logs "already done on this volume" and skips the pass. Image-code hardening still runs.
+- [ ] A new image version causes the `sites/` pass to re-run on a given volume (old marker no
+      longer matches, and is purged).
 - [ ] The web user (`www-data`) cannot write to `web/core/`, `web/modules/`, `vendor/`, or any
       `.htaccess` file after hardening completes.
 - [ ] Only `sites/*/files` is writable by `www-data` after hardening.
