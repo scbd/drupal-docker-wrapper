@@ -11,8 +11,8 @@ origin: standalone
 
 The wrapper image installs every contrib module and Drush at an exact pinned version, declared
 inline in a single `composer require` inside a dedicated `with-modules` build stage, and retains
-`composer.lock` in the image. The stage also writes `modules-versions.txt` and a per-module
-integrity hash.
+`composer.lock` in the image. The stage also writes `modules-versions.txt`, a human-inspectable
+manifest produced by `composer show --direct`.
 
 We do this for reproducibility and auditability: the exact dependency surface is visible in the
 `Dockerfile` without running the image, builds are deterministic across machines and time, and no
@@ -31,6 +31,7 @@ bump invalidates only that layer's cache, not core.
 ## Consequences
 
 - Upgrading a module is a deliberate edit to the `Dockerfile` plus a rebuild, not an automatic pull.
-- The pin can be silently defeated at runtime if the deployed stack bind-mounts the whole `modules`
-  directory over the image's contrib (a volume mask). That is the reason runtime module repair
-  exists and why the README recommends mounting only `modules/custom`.
+- The pin cannot be defeated at runtime: the deployed dmsm Swarm mount contract bind-mounts only
+  `modules/custom`, never the whole `modules` directory, so `web/modules/contrib`, `web/core`, and
+  `vendor` always come from the image. See [adr/0005](0005-remove-runtime-module-repair.md) for the
+  runtime module-repair step this removed once the mount contract made it unnecessary.

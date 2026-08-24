@@ -1,6 +1,6 @@
 ---
 date: 2026-06-24
-last-reviewed: 2026-06-24
+last-reviewed: 2026-08-24
 references: [docs/CONTEXT.md, docs/prd.md, docs/adr/]
 ---
 
@@ -19,10 +19,12 @@ It is the build and runtime orchestration hub for the Drupal half of bioland. Th
 bioland-head Nuxt frontend consumes the Drupal JSON:API this image exposes. See `docs/prd.md` for
 the product framing and `docs/CONTEXT.md` for the vocabulary used throughout.
 
-The defining tension of the design is reproducibility versus the runtime reality that the deployed
-stack bind-mounts a module directory from EFS. The build pins everything; the after-start phase
-re-asserts that pinning when a mount has drifted. Both phases speak one language, so this is a
-single bounded context.
+The design's guarantee is structural, not corrective: the deployed stack bind-mounts exactly five
+paths from EFS per site, and `modules/custom` is the only module path among them (see the
+Deployment section for the full contract). Contrib, core, and vendor always come from the pinned
+image and cannot drift, so there is no repair phase re-asserting a pin against drift. Build-time
+pinning and the runtime mount contract speak one language about what is pinned versus overlaid, so
+this is a single bounded context.
 
 ## 2. System Context (C4 L1)
 
@@ -65,7 +67,7 @@ flowchart TB
     core[Drupal 11 core + PHP 8.4<br/>from upstream]
     contrib[Pinned contrib modules<br/>web/modules/contrib]
     drush[Drush 13 + CLI tools<br/>curl, gosu, jq, patch, git, mysql client, aws cli]
-    manifest[modules-versions.txt<br/>+ per-module integrity hashes]
+    manifest[modules-versions.txt<br/>composer show --direct output]
     startup[Two-phase startup<br/>entrypoint.sh + after-start.sh + lib/]
     pkg[package.json<br/>wrapper version]
   end
@@ -103,8 +105,8 @@ stage means a module bump invalidates only that layer's cache, not core.
 ```mermaid
 flowchart LR
   subgraph base [base-core]
-    b1[FROM drupal:11.4.1-php8.4]
-    b2[System packages:<br/>curl, gosu, jq, nano,<br/>mysql client, rsync, unzip]
+    b1[FROM drupal:11.4.5-php8.4]
+    b2[System packages:<br/>curl, gosu, jq, nano,<br/>mysql client, unzip]
     b3[AWS CLI v2]
     b4[Rebuild GD with AVIF]
     b5[COPY patches/ into image]
@@ -114,8 +116,7 @@ flowchart LR
     m1[Install build tools:<br/>git, patch, unzip]
     m2[Require composer-patches plugin FIRST]
     m3[Single composer require:<br/>~40 pinned modules + Drush]
-    m4[Write modules-versions.txt]
-    m5[Generate per-module<br/>integrity hashes]
+    m4[Write modules-versions.txt<br/>and delete web/robots.txt]
     m6[Purge unzip]
   end
   subgraph fin [final]
@@ -135,33 +136,36 @@ Two details that surprise readers and are deliberate:
   because patches must be wired before any patched package is pulled.
 - The `base-core` stage ignores three guzzle/psr7 security advisories
   (`PKSA-93qv-9n9h-6k6p`, `PKSA-k22t-f949-t9g6`, `PKSA-7qs6-zvnz-h66r`). This is a temporary BL-695
-  measure so the Critical Drupal core fix in 11.4.1 can build before patched guzzle/psr7 releases
-  exist in core's pinned ranges. It tracks Drupal issue #3599842 and is meant to be removed.
+  measure so the Critical Drupal core fix shipped in 11.3.12 can build before patched guzzle/psr7
+  releases exist in core's pinned ranges. It tracks Drupal issue #3599842 and is meant to be
+  removed.
 
 ### 4.2 Startup scripts
 
 ```mermaid
 flowchart TB
   ep[entrypoint.sh<br/>root, thin]
-  asf[after-start.sh<br/>background, ~60s later]
-  common[lib/common.sh<br/>log, find_project_root]
-  patches[lib/patches.sh<br/>apply_patches_if_present<br/>DISABLED at startup]
+  asf[after-start.sh<br/>background, after HTTP readiness poll]
+  common[lib/common.sh<br/>log, find_project_root,<br/>read_wrapper_version]
+  patches[lib/patches.sh<br/>apply_patches_if_present<br/>optional, multi-strategy patch]
 
   ep -->|sources| common
-  ep -->|sources| patches
-  ep -.->|call commented out| patches
+  ep -.->|sources if present| patches
+  ep -.->|calls apply_patches_if_present<br/>if loaded| patches
   ep -->|forks| asf
   ep -->|exec| upstream[upstream docker-entrypoint -> apache2-foreground]
   asf -->|sources| common
-  asf --> repair[repair_composer_managed_modules]
-  asf --> cleanup[cleanup_deprecated_paths]
+  asf --> cleanup[cleanup_deprecated_paths<br/>defense-in-depth backstop]
   asf --> harden[harden_mounted_volumes +<br/>ensure_sites_files_permissions]
   asf --> cache[rebuild_cache via drush]
 ```
 
-`lib/patches.sh` is fully implemented (multi-strategy `patch` with applied markers) but its entry
-point `apply_patches_if_present` is commented out in `entrypoint.sh`. Startup patch application is
-therefore dormant. Build-time patching via `cweagans/composer-patches` is unaffected and stays on.
+`lib/patches.sh` is optional: if present, `entrypoint.sh` sources it and runs
+`apply_patches_if_present` before Apache starts, applying any `.patch` files under `patches/` with
+a `git apply` / `patch(1)` fallback chain and skipping anything already applied via marker files. A
+missing `lib/patches.sh` is logged and skipped rather than treated as fatal, and a failing patch
+step logs and continues rather than stopping the container from serving. Build-time patching via
+`cweagans/composer-patches` runs independently at image build time and is unaffected either way.
 
 ## 5. Key Flows (sequence diagrams)
 
@@ -173,23 +177,21 @@ sequenceDiagram
   participant Entry as entrypoint.sh (root)
   participant Apache as Apache / upstream entrypoint
   participant After as after-start.sh (background)
-  participant Composer
   participant Drush
 
   Docker->>Entry: ENTRYPOINT [apache2-foreground]
-  Note over Entry: apply_patches_if_present is commented out
-  Entry->>After: fork (sleep 60; run after-start) &
+  Entry->>Entry: apply_patches_if_present, if lib/patches.sh loaded
+  Entry->>After: fork run_after_start_when_ready &
   Entry->>Apache: exec docker-entrypoint apache2-foreground
   Apache-->>Docker: serving on :80 (HEALTHCHECK passes)
 
-  Note over After: ~60s later, in background
+  Note over After: polls http://127.0.0.1/ until it answers<br/>(any HTTP status), then runs after-start.sh
   After->>After: marker /tmp/after-start-<version>.complete present?
   alt marker exists
     After-->>After: exit 0 (already done this version)
   else first run for this version
     After->>After: clear stale version markers
-    After->>Composer: module repair vs composer.lock (as www-data)
-    After->>After: cleanup_deprecated_paths (robots.txt)
+    After->>After: cleanup_deprecated_paths (defense-in-depth backstop)
     par background hardening
       After->>After: harden_mounted_volumes + sites/*/files perms
     end
@@ -198,9 +200,13 @@ sequenceDiagram
   end
 ```
 
-The point of the fork is that the healthcheck never waits on composer. Apache is up in seconds; the
-expensive, privilege-sensitive work runs once afterward and is gated by the version marker so a
-container restart on the same image does not redo it.
+The point of the fork is that the healthcheck never waits on after-start's work. Apache execs as
+soon as entrypoint.sh reaches it; after-start only begins once `http://127.0.0.1/` actually answers
+(any HTTP status counts, including a 301/403/500 mid-install), polled every
+`DRUPAL_AFTER_START_READY_INTERVAL` seconds (default 2) for up to
+`DRUPAL_AFTER_START_READY_TIMEOUT` seconds (default 120) before running anyway. The
+privilege-sensitive work then runs once and is gated by the version marker so a container restart
+on the same image does not redo it.
 
 ### 5.2 CI build and release
 
@@ -229,7 +235,6 @@ produces and the runtime checks against. The entities below are build artifacts,
 ```mermaid
 erDiagram
   COMPOSER_LOCK ||--o{ CONTRIB_MODULE : pins
-  CONTRIB_MODULE ||--|| INTEGRITY_HASH : has
   CONTRIB_MODULE ||--o| MODULES_VERSIONS_TXT : listed_in
   PACKAGE_JSON ||--|| VERSION_MARKER : names
   COMPOSER_LOCK {
@@ -241,17 +246,14 @@ erDiagram
     string installed_version
     string path "web/modules/contrib/<name>"
   }
-  INTEGRITY_HASH {
-    string file ".<module>.hash"
-    string sha256
-  }
   VERSION_MARKER {
     string file "/tmp/after-start-<version>.complete"
   }
 ```
 
-`composer.lock` is the source of truth at runtime: module repair compares each installed module's
-version against it and restores any drift via `composer install`.
+`composer.lock` is a build-time source of truth only: it pins every contrib module's exact version
+when the image is built. Nothing reads it at runtime, because only `modules/custom` is ever
+bind-mounted; contrib always comes from the image and has no drift to compare against.
 
 ## 7. State Machines
 
@@ -262,8 +264,7 @@ stateDiagram-v2
   [*] --> Pending: container start
   Pending --> Skipped: marker for this version exists
   Pending --> Running: no marker (clear stale markers first)
-  Running --> Repairing: module repair vs composer.lock
-  Repairing --> Cleanup: cleanup deprecated paths
+  Running --> Cleanup: cleanup deprecated paths
   Cleanup --> fork_state <<fork>>
   fork_state --> Hardening: forked, backgrounded (no wait)
   fork_state --> Rebuilding: drush cache:rebuild
@@ -306,21 +307,21 @@ flowchart LR
 ```
 
 The deployed `drupal` service runs under the dmsm Swarm multi-site stacks (defined outside this
-repo). Today it bind-mounts the whole `modules` tree, which masks the image's contrib; the
-recommended state in the README is to mount only `modules/custom` so contrib and integrity hashes
-come from the image.
+repo). Each site's stack bind-mounts exactly five paths from EFS: `php/custom.ini`,
+`modules/custom`, `sites`, `drush`, and `temp`. The whole `modules` directory is never mounted, so
+`web/modules/contrib`, `web/core`, and `vendor` always come from the pinned image and cannot drift.
 
 ## 9. Quality Attributes (NFRs)
 
 | Attribute | Target | How the architecture meets it |
-|---|---|---|
+| --- | --- | --- |
 | Reproducibility | Same image digest from same source | Every contrib module and Drush pinned to an exact version inline in the `Dockerfile`; `composer.lock` retained, never deleted |
 | Determinism | No implicit upgrades between builds | Single consolidated `composer require` with explicit versions; `--prefer-dist`; lockfile kept; `composer outdated --direct` used for visibility, not auto-bumps |
 | Startup latency | Apache serving in seconds | Thin entrypoint starts Apache immediately and exec-chains the upstream entrypoint; all heavy work is forked to the after-start phase |
 | Idempotent provisioning | Heavy work runs once per container per version | After-start gated by `/tmp/after-start-<version>.complete`; stale markers cleared on a new version so upgrades re-run |
-| Health observability | Container reports healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with a 40s start period; never blocked by composer or drush |
+| Health observability | Container reports healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with a 40s start period; never blocked by patch application or drush |
 | Security / least privilege | Web user cannot write code | Privilege separation: root only for permission fixes and port bind, then www-data via gosu; code `root:www-data` read-only, only `sites/*/files` writable; all `.htaccess` forced to 644 |
-| Supply-chain control | Auditable, explicit dependencies | Versions visible in the `Dockerfile`; `modules-versions.txt` manifest; per-module integrity hashes generated for manual audit (not machine-verified at startup); `.dockerignore` keeps `.env*` and archived patches out of the build context |
+| Supply-chain control | Auditable, explicit dependencies | Versions visible in the `Dockerfile`; `modules-versions.txt` manifest (`composer show --direct` output) for human-inspectable audit; `.dockerignore` keeps `.env*` and archived patches out of the build context |
 | Image build efficiency | Fast incremental rebuilds | Multi-stage build; module installs isolated in `with-modules`; apt and Composer caches mounted; build-only tools purged before `final` |
 
 ## 10. Architecture Decisions
@@ -334,19 +335,15 @@ Recorded in `docs/adr/` (rationale lives there, not restated here):
   the entrypoint instead of blocking it.
 - `docs/adr/0004-gate-after-start-with-a-per-version-marker.md` - why the one-time work is gated on
   a version-stamped marker.
+- `docs/adr/0005-remove-runtime-module-repair.md` - why runtime module repair and the per-module
+  integrity hashes were removed.
 
 ## 11. Risks & Open Questions
 
-- **Volume mask in production.** The deployed Swarm stacks still mount the whole `modules`
-  directory, so a new image's upgraded contrib is shadowed by the stale EFS copy until the
-  `modules/custom`-only mount is adopted. Until then, module repair at runtime is doing work the
-  mount strategy should make unnecessary.
-- **Module repair is a heavy runtime fallback.** It walks every contrib module and may run
-  `composer install` at startup. With the recommended mount it becomes a near no-op for contrib;
-  without it, startup can pull packages on a fresh container.
-- **Startup patch application is dormant.** `lib/patches.sh` is complete but its call is commented
-  out. If a future patch must be applied at runtime, the call has to be re-enabled deliberately;
-  build-time composer patching is the current path.
+- **Startup patch application runs unconditionally when present.** `apply_patches_if_present` runs
+  on every container start if `lib/patches.sh` shipped in the image, before Apache serves. It is
+  idempotent (marker files skip already-applied patches) and a failure only logs and continues, but
+  there is no way to disable it short of removing `lib/patches.sh` from the image.
 - **Temporary advisory ignores.** Three guzzle/psr7 advisories are suppressed for BL-695 and must be
   removed once patched releases land in core's ranges (Drupal #3599842). Left in, they hide real
   future advisories on those packages.

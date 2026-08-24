@@ -1,9 +1,9 @@
 # Bioland: Context Map
 
-The bounded-context index for the [Bioland architectural plan](bioland.md). Each of the five
-repositories is a single bounded context with its own ubiquitous language. This file maps the
-contexts to their spokes, names the relationships between them, and lists the terms that are *shared*
-or *translated* across a boundary - the places where one context's language meets another's.
+The bounded-context index for the Bioland architectural plan. Each of the five repositories is a
+single bounded context with its own ubiquitous language. This file maps the contexts to their
+spokes, names the relationships between them, and lists the terms that are *shared* or *translated*
+across a boundary - the places where one context's language meets another's.
 
 Per-context glossaries: this repo's [CONTEXT.md](CONTEXT.md) is the **CMS Runtime** glossary. Each
 sibling repo keeps its own `docs/CONTEXT.md` for its context (referenced as prose below, not linked,
@@ -13,11 +13,11 @@ since the code lives in another repo).
 
 | Context | Spoke | Repo (`Code:`) | Ubiquitous language (sample) |
 | ------- | ----- | -------------- | ---------------------------- |
-| **CMS Runtime** | [drupal-docker-wrapper](bioland/drupal-docker-wrapper.md) | `drupal-docker-wrapper` (this repo) | wrapper image, upstream image, build stage, contrib / custom module, pinned version, two-phase startup, after-start, version marker, module repair, volume mask |
-| **Site Behaviour** | [drupal-module-bioland](bioland/drupal-module-bioland.md) | `Code: drupal-module-bioland` (branch `latest`) | content, tags, additional fields, field visibility, home widgets, mega menu, country-map defaults, `is_biosafety_land` |
-| **Thesaurus Tagging Field** | [drupal-module-scbd-thesaurus-tags](bioland/drupal-module-scbd-thesaurus-tags.md) | `Code: drupal-module-scbd-thesaurus-tags` (machine name `scbd_field`) | `scbd_field_thesaurus` field type, thesaurus widget, domain, **term key**, `value` / `value2`, mount markup |
-| **Tag Picker Widget** | [drupal-module-scbd-field-js](bioland/drupal-module-scbd-field-js.md) | `Code: drupal-module-scbd-field-js` | tag picker, mount, hidden input, **domain**, **term key**, `singleValueDomains`, auto-add |
-| **Headless Presentation** | [bioland-head](bioland/bioland-head.md) | `Code: bioland-head` (branch `bsl-2026-04`) | tenant, `siteCode`, `isBchSite`, page, menus, locale, edit mode, comment |
+| **CMS Runtime** | [drupal-docker-wrapper](drupal-docker-wrapper.md) | `drupal-docker-wrapper` (this repo) | wrapper image, upstream image, build stage, contrib / custom module, pinned version, two-phase startup, after-start, version marker, mount contract |
+| **Site Behaviour** | drupal-module-bioland | `Code: drupal-module-bioland` (branch `latest`) | content, tags, additional fields, field visibility, home widgets, mega menu, country-map defaults, `is_biosafety_land` |
+| **Thesaurus Tagging Field** | drupal-module-scbd-thesaurus-tags | `Code: drupal-module-scbd-thesaurus-tags` (machine name `scbd_field`) | `scbd_field_thesaurus` field type, thesaurus widget, domain, **term key**, `value` / `value2`, mount markup |
+| **Tag Picker Widget** | drupal-module-scbd-field-js | `Code: drupal-module-scbd-field-js` | tag picker, mount, hidden input, **domain**, **term key**, `singleValueDomains`, auto-add |
+| **Headless Presentation** | bioland-head | `Code: bioland-head` (branch `bsl-2026-04`) | tenant, `siteCode`, `isBchSite`, page, menus, locale, edit mode, comment |
 
 External contexts the system integrates with but does not own: **DMSM** (per-tenant config, locale,
 geography), **api.cbd.int** (SCBD thesauri + CBD index), and the public data partners (GBIF, GeoBON,

@@ -3,14 +3,12 @@
 > is the truth about the code and this plan is the truth about intent. The overlap between the two is
 > deliberate provenance, not duplication.
 >
-> Part of the [Bioland](#) architectural plan. The cross-project hub (System Overview,
+> Part of the Bioland architectural plan. The cross-project hub (System Overview,
 > Actors, Workflow Statuses, End-to-End Flows, Verification, Deferred Items) is the
-> [hub](#); glossary: [CONTEXT.md](CONTEXT.md); context map:
+> hub, not yet linkable from this repo; glossary: [CONTEXT.md](CONTEXT.md); context map:
 > [CONTEXT-MAP.md](CONTEXT-MAP.md). This doc owns the **Drupal Docker Wrapper** (Docker / Bash /
-> Composer) work. Sibling spokes: [Bioland Head](#),
-> [Drupal Module Bioland](#),
-> [Drupal Module SCBD Thesaurus Tags](#),
-> [Drupal Module SCBD Field JS](#).
+> Composer) work. Sibling spokes (separate repos, no cross-repo link yet): Bioland Head,
+> Drupal Module Bioland, Drupal Module SCBD Thesaurus Tags, Drupal Module SCBD Field JS.
 
 # Bioland: Drupal Docker Wrapper — Architectural Plan
 
@@ -26,7 +24,7 @@ image.
 This project is the hub repo for the Bioland architectural plan. Its design documents (this file,
 [architecture.md](architecture.md), [prd.md](prd.md), [CONTEXT.md](CONTEXT.md)) are the
 system-of-record for the CMS Runtime bounded context. The cross-project material lives in the
-[Bioland hub](#).
+Bioland hub (a separate repo; no cross-repo link yet).
 
 > Cross-project decisions: [docs/adr/](adr/).
 
@@ -35,8 +33,8 @@ system-of-record for the CMS Runtime bounded context. The cross-project material
 ## Owned Interface (the seam)
 
 The wrapper is a deep module. Almost all of its implementation — the multi-stage build, the ~40
-pinned contrib modules, the integrity hashes, the two-phase startup, the permission hardening — is
-hidden from consumers. What other projects actually depend on is a small, stable contract:
+pinned contrib modules, the two-phase startup, the permission hardening — is hidden from
+consumers. What other projects actually depend on is a small, stable contract:
 
 **1. The runtime port — a Drupal 11 site that boots immediately.**
 The image starts Apache on `:80` in seconds and passes its `HEALTHCHECK` before the background
@@ -47,7 +45,7 @@ pinned Drupal core + Drush environment to run inside, not on knowing how it was 
 Exactly five paths are safe to bind-mount from EFS:
 
 | Mount path | Purpose |
-|---|---|
+| --- | --- |
 | `modules/custom` | Custom module overlays (`bioland`, `scbd_*`) |
 | `sites` | Multi-site config and per-site `files/` |
 | `drush` | Site aliases |
@@ -65,14 +63,12 @@ contrib dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, `auto_node_tran
 pinned and present.
 
 **4. The after-start guarantees.**
-Once per container start per image version, the wrapper: (a) repairs any contrib drift against
-`composer.lock`, (b) cleans deprecated paths, (c) hardens permissions (code read-only
-`root:www-data`; only `sites/*/files` writable), and (d) rebuilds the Drupal cache. Custom modules
-can assume this baseline; they do not run it themselves.
+Once per container start per image version, the wrapper: (a) cleans deprecated paths, (b) hardens
+permissions (code read-only `root:www-data`; only `sites/*/files` writable), and (c) rebuilds the
+Drupal cache. Custom modules can assume this baseline; they do not run it themselves.
 
-What is **not** in the interface: the build stages, the integrity hashes (build-time artifacts,
-not machine-verified at startup), the dormant startup patch mechanism, and the module repair
-internals. Those are implementation, hidden behind the surface above.
+What is **not** in the interface: the build stages and the startup patch-application internals.
+Those are implementation, hidden behind the surface above.
 
 ---
 
@@ -105,7 +101,7 @@ flowchart TB
   wrapper -->|builds FROM| upstream
   wrapper -->|pins contrib via Composer| packagist
   wrapper -->|published to| registry
-  efs -->|overlays modules, sites, drush| wrapper
+  efs -->|overlays modules/custom, sites, drush| wrapper
   custom -->|deployed onto| efs
   head -->|reads JSON:API| wrapper
 ```
@@ -123,7 +119,7 @@ flowchart TB
     core[Drupal 11 core + PHP 8.4<br/>from upstream]
     contrib[Pinned contrib modules<br/>web/modules/contrib]
     drush[Drush 13 + CLI tools<br/>curl, gosu, jq, patch, git, mysql client, aws cli]
-    manifest[modules-versions.txt<br/>+ per-module integrity hashes]
+    manifest[modules-versions.txt<br/>direct-dependency manifest]
     startup[Two-phase startup<br/>entrypoint.sh + after-start.sh + lib/]
     pkg[package.json<br/>wrapper version]
   end
@@ -150,11 +146,11 @@ flowchart TB
 The image contains four kinds of content:
 
 | Content | Where | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Drupal 11 core + PHP 8.4 | `web/core/`, `vendor/` | From the upstream image |
 | Pinned contrib modules (~40) | `web/modules/contrib/` | Built in the `with-modules` stage |
 | Drush 13 + CLI tooling | system path / composer global | curl, gosu, jq, patch, git, mysql client, aws cli |
-| Startup scripts + manifest | `scripts/`, `/opt/drupal/modules-versions.txt` | `entrypoint.sh`, `after-start.sh`, integrity hashes |
+| Startup scripts + manifest | `scripts/`, `/opt/drupal/modules-versions.txt` | `entrypoint.sh`, `after-start.sh` |
 
 Five paths are **overlaid at runtime** via bind mounts from EFS (see Owned Interface §2 above). The
 hard rule: never mount over `vendor/`, `web/core/`, or `web/modules/contrib/`.
@@ -166,27 +162,27 @@ hard rule: never mount over `vendor/`, `web/core/`, or `web/modules/contrib/`.
 The `Dockerfile` is three named stages, each adding one concern:
 
 | Stage | Adds | Cache strategy |
-|---|---|---|
-| `base-core` | Upstream Drupal core, system packages (curl, gosu, jq, nano, mysql-client, rsync, unzip, AWS CLI v2, GD/AVIF rebuild), composer config | Cache invalidates only on system-package or base-image changes |
-| `with-modules` | One consolidated `composer require` of all ~40 pinned modules + Drush; `modules-versions.txt`; per-module integrity hashes | Cache invalidates on any module version bump; isolated from core |
+| --- | --- | --- |
+| `base-core` | Upstream Drupal core, system packages (curl, gosu, jq, nano, mysql-client, unzip, AWS CLI v2, GD/AVIF rebuild), composer config | Cache invalidates only on system-package or base-image changes |
+| `with-modules` | One consolidated `composer require` of all ~40 pinned modules + Drush; `modules-versions.txt` | Cache invalidates on any module version bump; isolated from core |
 | `final` | Production PHP ini (`zz-production.ini`), OCI labels, docroot symlink, startup scripts, composer-home writable for www-data, `HEALTHCHECK`, `ENTRYPOINT` | Small, invalidates rarely |
 
 ```mermaid
 flowchart LR
   subgraph base [base-core]
-    b1[FROM drupal:11.4.1-php8.4]
-    b2[System packages:<br/>curl, gosu, jq, nano,<br/>mysql client, rsync, unzip]
+    b1[FROM drupal:11.4.5-php8.4]
+    b2[System packages:<br/>curl, gosu, jq, nano,<br/>mysql client, unzip]
     b3[AWS CLI v2]
     b4[Rebuild GD with AVIF]
     b5[COPY patches/ into image]
-    b6[Composer config:<br/>prefer dist, enable patching,<br/>skip robots.txt scaffold,<br/>ignore 3 guzzle advisories]
+    b6[Composer config:<br/>prefer dist, enable patching,<br/>exclude robots.txt from scaffold,<br/>ignore 3 guzzle advisories]
   end
   subgraph mods [with-modules]
     m1[Install build tools:<br/>git, patch, unzip]
     m2[Require composer-patches plugin FIRST]
     m3[Single composer require:<br/>~40 pinned modules + Drush]
     m4[Write modules-versions.txt]
-    m5[Generate per-module<br/>integrity hashes]
+    m5[Delete web/robots.txt<br/>so drupal/robotstxt owns the route]
     m6[Purge unzip]
   end
   subgraph fin [final]
@@ -206,45 +202,45 @@ Two deliberate ordering constraints:
   a separate `composer require` step at the top of `with-modules`.
 - Three guzzle/psr7 security advisories (`PKSA-93qv-9n9h-6k6p`, `PKSA-k22t-f949-t9g6`,
   `PKSA-7qs6-zvnz-h66r`) are temporarily suppressed in `base-core` for BL-695 so the Critical
-  Drupal 11.4.1 core fix can build before patched releases land in core's dependency ranges.
-  Remove when Drupal issue #3599842 is resolved.
+  SA-CORE-2026-005..009 Drupal core fix (shipped in 11.3.12) can build before patched guzzle/psr7
+  releases land in core's dependency ranges. Remove when Drupal issue #3599842 is resolved.
 
 #### Startup scripts
 
 ```mermaid
 flowchart TB
   ep[entrypoint.sh\nroot, thin]
-  asf[after-start.sh\nbackground, ~60 s later]
-  common[lib/common.sh\nlog, find_project_root]
-  patches[lib/patches.sh\napply_patches_if_present\nDISABLED at startup]
+  asf[after-start.sh\nbackground, once the readiness poll succeeds]
+  common[lib/common.sh\nlog, find_project_root, read_wrapper_version]
+  patches[lib/patches.sh\napply_patches_if_present\noptional: missing file logged, skipped]
 
+  ep -->|sources if present| patches
+  ep -->|calls, best-effort| patches
   ep -->|sources| common
-  ep -->|sources| patches
-  ep -.->|call commented out| patches
-  ep -->|forks| asf
+  ep -->|forks, polls http://127.0.0.1/| asf
   ep -->|exec| upstream[upstream docker-entrypoint → apache2-foreground]
   asf -->|sources| common
-  asf --> repair[repair_composer_managed_modules]
   asf --> cleanup[cleanup_deprecated_paths]
   asf --> harden[harden_mounted_volumes +\nensure_sites_files_permissions]
   asf --> cache[rebuild_cache via drush]
 ```
 
-`lib/patches.sh` is fully implemented (multi-strategy `patch`, applied markers) but its entry point
-`apply_patches_if_present` is commented out in `entrypoint.sh`. Startup patch application is
-dormant; build-time composer patching via `cweagans/composer-patches` is active.
+`lib/patches.sh` is fully implemented (multi-strategy `patch`, applied markers) and its entry point
+`apply_patches_if_present` runs at startup, before Apache starts. It is optional and best-effort: a
+missing `lib/patches.sh` is logged and skipped rather than killing the container, and a failing
+patch step does not stop Apache from serving. Build-time composer patching via
+`cweagans/composer-patches` runs independently at image build.
 
 ---
 
 ## Data Model
 
-There is no application database in this repo. The "data" is the dependency manifest produced at
-build time and checked at runtime:
+There is no application database in this repo. The "data" is the dependency manifest fixed at
+build time:
 
 ```mermaid
 erDiagram
   COMPOSER_LOCK ||--o{ CONTRIB_MODULE : pins
-  CONTRIB_MODULE ||--|| INTEGRITY_HASH : has
   CONTRIB_MODULE ||--o| MODULES_VERSIONS_TXT : listed_in
   PACKAGE_JSON ||--|| VERSION_MARKER : names
   COMPOSER_LOCK {
@@ -256,19 +252,16 @@ erDiagram
     string installed_version
     string path "web/modules/contrib/<name>"
   }
-  INTEGRITY_HASH {
-    string file ".<module>.hash"
-    string sha256
-  }
   VERSION_MARKER {
     string file "/tmp/after-start-<version>.complete"
   }
 ```
 
-`composer.lock` is the authoritative source of truth at runtime: module repair compares each
-installed module's version against it and restores any drift via `composer install`. The integrity
-hashes are build-time artifacts only — no runtime script reads them today. `modules-versions.txt`
-is the human-readable manifest of direct dependency versions.
+`composer.lock` is the authoritative pin: every contrib module's exact version is fixed at build
+time and never rewritten afterward, because `web/modules/contrib` is never bind-mounted (see the
+mount contract in Owned Interface §2 above) — there is nothing at runtime that could drift it.
+`modules-versions.txt` is the human-readable manifest of direct dependency versions, produced by
+`composer show --direct` at build time.
 
 ---
 
@@ -282,23 +275,21 @@ sequenceDiagram
   participant Entry as entrypoint.sh (root)
   participant Apache as Apache / upstream entrypoint
   participant After as after-start.sh (background)
-  participant Composer
   participant Drush
 
   Docker->>Entry: ENTRYPOINT [apache2-foreground]
-  Note over Entry: apply_patches_if_present is commented out
-  Entry->>After: fork (sleep 60; run after-start) &
+  Note over Entry: apply_patches_if_present runs, best-effort (missing engine or a failed patch does not block Apache)
+  Entry->>After: fork (poll http://127.0.0.1/ until ready, then run after-start) &
   Entry->>Apache: exec docker-entrypoint apache2-foreground
   Apache-->>Docker: serving on :80 — HEALTHCHECK passes
 
-  Note over After: ~60 s later, in background
+  Note over After: once the readiness poll succeeds (or times out), in background
   After->>After: marker /tmp/after-start-<version>.complete present?
   alt marker exists
     After-->>After: exit 0 (already done this version)
   else first run for this version
     After->>After: clear stale version markers
-    After->>Composer: module repair vs composer.lock (as www-data)
-    After->>After: cleanup_deprecated_paths (robots.txt)
+    After->>After: cleanup_deprecated_paths (robots.txt; defence-in-depth backstop)
     par background hardening
       After->>After: harden_mounted_volumes + sites/*/files perms
     end
@@ -307,9 +298,10 @@ sequenceDiagram
   end
 ```
 
-The fork design means the healthcheck never waits on Composer. Apache is up in seconds;
-the expensive, privilege-sensitive work runs once afterward, gated by the version marker so a
-container restart on the same image skips it.
+The fork design means the healthcheck never waits on after-start. Apache is exec'd immediately and
+serving independently of it; the forked task polls for that readiness and then runs the
+privilege-sensitive work once, gated by the version marker so a container restart on the same
+image skips it.
 
 ### CI build and release
 
@@ -365,9 +357,9 @@ flowchart LR
 ```
 
 The deployed `drupal` service runs under the dmsm Swarm multi-site stacks (defined outside this
-repo). Today it bind-mounts the whole `modules` tree, which masks the image's contrib; the
-recommended state is to mount only `modules/custom` so contrib and integrity hashes come from the
-image.
+repo). It bind-mounts exactly the five paths above; `modules/custom` is the only part of
+`modules/` ever mounted, so `web/modules/contrib`, `web/core`, and `vendor` always come from the
+image and cannot drift.
 
 ---
 
@@ -379,19 +371,13 @@ declared inline in the `with-modules` `composer require`. `composer.lock` is ret
 Build-time patching via `cweagans/composer-patches` is live; three guzzle/psr7 advisories are
 temporarily suppressed for BL-695 (remove per Drupal #3599842).
 
-**Module repair adapter.**
-`after-start.sh` → `repair_composer_managed_modules`: walks every contrib module directory,
-compares the installed version against `composer.lock`, removes any stale or mis-owned directory,
-and runs `composer install` (as `www-data`) to restore the pins. With the recommended
-`modules/custom`-only mount this is a near no-op for contrib; with the current whole-`modules`
-mount it does real work each start.
-
 **Permission hardening adapter.**
 `after-start.sh` → `harden_mounted_volumes` + `ensure_sites_files_permissions`: makes the code
 tree read-only (`root:www-data`, dirs 755 / files 644), locks `temp/` to `root:root` 700, forces
-every `.htaccess` to 644, and leaves only `sites/*/files` writable (`www-data:www-data` 775). Root
-is used only for this hardening step and for binding port 80; all composer and Drush work runs as
-`www-data` via `gosu`.
+every `.htaccess` to 644, tightens `settings*.php`/`services*.yml` under `web/sites` to `440`
+`root:www-data`, and leaves only `sites/*/files` writable (`www-data:www-data` 775). Root is used
+only for this hardening step and for binding port 80; all Drush work runs as `www-data` via
+`gosu`.
 
 **CI / release adapter.**
 GitHub Actions: `lint` (markdownlint + hadolint) gates `build-test` (docker build + smoke-test). The
@@ -408,14 +394,14 @@ not guarantee that after-start succeeded; check `[after-start]` log lines.
 ## Quality Attributes (NFRs)
 
 | Attribute | Target | Design mechanism |
-|---|---|---|
+| --- | --- | --- |
 | **Reproducibility** | Same digest from same source | Every contrib module and Drush pinned inline in the `Dockerfile`; `composer.lock` retained |
 | **Determinism** | No implicit upgrades | Single consolidated `composer require` with exact versions; lockfile kept; `composer outdated --direct` used for visibility |
 | **Startup latency** | Apache serving in seconds | Thin entrypoint forks after-start and exec-chains the upstream entrypoint immediately |
 | **Idempotent provisioning** | One-time work per container per version | After-start gated by `/tmp/after-start-<version>.complete`; stale markers cleared on new version |
-| **Health observability** | Container healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with 40 s start period; never blocked by Composer or Drush |
+| **Health observability** | Container healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with 40 s start period; never blocked by after-start's cleanup, hardening, or Drush cache rebuild |
 | **Security / least privilege** | Web user cannot write code | root only for permission fixes and port bind; then `www-data` via gosu; code `root:www-data` read-only; only `sites/*/files` writable |
-| **Supply-chain control** | Auditable, explicit deps | Versions visible in `Dockerfile`; `modules-versions.txt` manifest; per-module integrity hashes; `.dockerignore` excludes `.env*` and archived patches |
+| **Supply-chain control** | Auditable, explicit deps | Versions visible in `Dockerfile`; `modules-versions.txt` manifest; `.dockerignore` excludes `.env*` and archived patches |
 | **Build efficiency** | Fast incremental rebuilds | Multi-stage build; module installs isolated; apt and Composer caches mounted; build-only tools purged |
 
 ---
@@ -425,11 +411,12 @@ not guarantee that after-start succeeded; check `[after-start]` log lines.
 Recorded in [docs/adr/](adr/). Rationale lives there; not restated here.
 
 | ADR | Decision |
-|---|---|
+| --- | --- |
 | [0001](adr/0001-record-architecture-decisions.md) | Adopt Architecture Decision Records |
 | [0002](adr/0002-pin-contrib-modules-in-a-dedicated-build-stage.md) | Pin contrib modules at exact versions in a dedicated build stage rather than floating constraints or a separate manifest |
 | [0003](adr/0003-two-phase-startup-entrypoint-and-after-start.md) | Two-phase startup: thin entrypoint chains Apache immediately; after-start does heavy provisioning in the background |
 | [0004](adr/0004-gate-after-start-with-a-per-version-marker.md) | Gate after-start one-time work with a version-stamped marker in `/tmp` so restarts skip it and upgrades re-run it |
+| [0005](adr/0005-remove-runtime-module-repair.md) | Remove runtime module repair and the per-module integrity hashes, since the mount contract never bind-mounts contrib and it cannot drift |
 
 ---
 
@@ -444,8 +431,7 @@ stateDiagram-v2
   [*] --> Pending: container start
   Pending --> Skipped: marker for this version exists
   Pending --> Running: no marker (clear stale markers first)
-  Running --> Repairing: module repair vs composer.lock
-  Repairing --> Cleanup: cleanup deprecated paths
+  Running --> Cleanup: cleanup_deprecated_paths
   Cleanup --> Hardening: forked, backgrounded (no wait)
   Cleanup --> Rebuilding: drush cache:rebuild
   Rebuilding --> Complete: touch marker
@@ -455,12 +441,11 @@ stateDiagram-v2
 ```
 
 | State | Transition trigger | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `Pending` | Container start | Always enters here |
 | `Skipped` | Marker for this version already exists | Container restart on the same image; work skipped |
 | `Running` | No marker found | Clears any stale `after-start-*.complete` markers first |
-| `Repairing` | Entered from `Running` | `repair_composer_managed_modules` vs `composer.lock` as `www-data` |
-| `Cleanup` | Repair done | `cleanup_deprecated_paths` (e.g. `robots.txt`) |
+| `Cleanup` | Entered from `Running` | `cleanup_deprecated_paths` (e.g. `robots.txt`); defence-in-depth backstop, not the primary mechanism |
 | `Hardening` | Forked at `Cleanup` exit, runs in background | Permission hardening; cache rebuild does not wait on it |
 | `Rebuilding` | Forked at `Cleanup` exit, runs in foreground | `drush cache:rebuild` as `www-data` via `gosu` |
 | `Complete` | Rebuild done | Marker file touched; subsequent restarts on the same version → `Skipped` |
@@ -474,10 +459,7 @@ markers and re-runs the full sequence.
 ## Deferred / Open Items
 
 | Item | Owner | Notes |
-|---|---|---|
-| **Volume mask in production** | dmsm / ops | Deployed Swarm stacks still mount the whole `modules` directory, shadowing the image's pinned contrib until the `modules/custom`-only mount is adopted. Until fixed, module repair at startup is doing real work the mount strategy should make unnecessary. Resolution: migrate the Swarm compose files to mount only `modules/custom`. |
-| **Module repair is a heavy runtime fallback** | this repo | With the whole-modules mount, startup can pull packages on a fresh container. Near no-op once the volume mask is fixed. |
-| **Startup patch application is dormant** | this repo | `lib/patches.sh` is complete but the `apply_patches_if_present` call is commented out in `entrypoint.sh`. Re-enable deliberately if a runtime patch is needed. Build-time composer patching is the current active path. |
+| --- | --- | --- |
 | **Temporary advisory ignores (BL-695)** | this repo | Three guzzle/psr7 advisories suppressed to allow the Critical Drupal 11.4.1 build. Must be removed once Drupal issue #3599842 is resolved. Left in place, they will hide real future advisories on those packages. |
 | **Release publishing is off** | CI / ops | The GitHub Actions `push-images` job is commented out. Tagged releases build and test but do not push to Docker Hub. Re-enable with Docker Hub credentials when ready to publish. |
 | **No scheduled weekly rebuild** | CI | README calls for a weekly rebuild to pick up upstream base-image security patches; the automation is not yet in place. |
@@ -502,7 +484,8 @@ checklist.
 - [ ] Build context contains no `.env*` or archived patch files (`.dockerignore` enforcement).
 - [ ] CI fails the build when a key module directory (`jsonapi_extras`, `search_api`) is missing or
       PHP / Drush are broken (smoke test).
-- [ ] `[cross]` Bind-mounting only `modules/custom` (not the whole `modules/` tree) produces a
-      working site with no volume-masked contrib.
+- [ ] `[cross]` The dmsm Swarm mount contract binds only `modules/custom` (never the whole
+      `modules/` tree), so `web/modules/contrib` always comes from the image with no
+      volume-masked drift — a standing regression check, not a one-time migration.
 - [ ] `[cross]` Custom modules (`bioland`, `scbd_field`) overlaid at runtime find their contrib
       dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, etc.) pinned and present.

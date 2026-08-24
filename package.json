@@ -3,7 +3,7 @@
   "version": "11.4.5-v2",
   "private": true,
   "scripts": {
-    "lint:md": "markdownlint '**/*.md' --ignore node_modules",
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules --ignore graphify-out",
     "lint:md:fix": "markdownlint '**/*.md' --ignore node_modules --fix",
     "lint:docker": "hadolint Dockerfile || (echo 'Hadolint issues' && exit 1)",
     "lint": "npm run lint:md && npm run lint:docker",
