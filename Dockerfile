@@ -66,7 +66,14 @@ RUN set -eux; \
     # auto_node_translate 3.0.2: fix call_user_func TypeError and restrict the Automatic Translation tab to the module's own permission (Drupal issue #3609236) \
     composer config --json --merge extra.patches."drupal/auto_node_translate" '{"Restrict Automatic Translation tab to auto translate permission; fixes call_user_func TypeError (#3609236)": "patches/auto_node_translate--2026-07-15--3609236--gate-on-permission.patch"}'; \
     composer config --no-plugins allow-plugins.cweagans/composer-patches true; \
-    composer config extra.drupal-scaffold.file-mapping."[web-root]/robots.txt".mode skip; \
+    # Exclude robots.txt from drupal-scaffold. This MUST go through --json --merge on
+    # the file-mapping key: `composer config` only auto-nests one level below `extra.`,
+    # so the older `extra.drupal-scaffold.file-mapping."[web-root]/robots.txt".mode skip`
+    # form wrote a single flat key literally named
+    # `file-mapping.[web-root]/robots.txt.mode` and scaffold never saw an override.
+    # `false` is also the only value scaffold honours as "do not write this file";
+    # `mode: skip` is not part of its schema.
+    composer config --json --merge extra.drupal-scaffold.file-mapping '{"[web-root]/robots.txt": false}'; \
     composer config policy.advisories.ignore-id PKSA-93qv-9n9h-6k6p PKSA-k22t-f949-t9g6 PKSA-7qs6-zvnz-h66r
 
 ###############################################
@@ -138,7 +145,11 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       --no-interaction \
       --no-progress \
       --optimize-autoloader; \
-    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt
+    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt; \
+    # The scaffold exclusion above stops composer from WRITING robots.txt, but the
+    # upstream drupal image already ships one. Delete it so the drupal/robotstxt
+    # module owns the route instead of being shadowed by a static file.
+    rm -f /opt/drupal/web/robots.txt
 #       'drupal/jsonapi_extras:3.27' \
 
 

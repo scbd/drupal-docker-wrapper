@@ -22,6 +22,11 @@ fi
 MARKER_FILE="/tmp/after-start-${AFTER_START_VERSION}.complete"
 
 # Clean up deprecated paths
+#
+# Defense in depth only. The build excludes robots.txt from drupal-scaffold and
+# deletes the upstream image's copy, so this is normally a no-op. It stays as
+# cheap insurance against a base-image bump or a future composer operation
+# re-scaffolding the file and shadowing the drupal/robotstxt module.
 cleanup_deprecated_paths() {
   local project_root
   project_root="$(find_project_root)" || return 0
