@@ -74,9 +74,12 @@ marker from a pre-move wrapper version has it purged and the work re-runs once o
 - Two containers on the same volume and the same wrapper version, started at the same time, can
   both find no marker and both run the `sites/` permission pass. The pass is idempotent, so this is
   safe. It is wasted work, not a correctness problem.
-- `harden_mounted_volumes` still runs a `find` for every `.htaccess` file across the whole project
+- ~~`harden_mounted_volumes` still runs a `find` for every `.htaccess` file across the whole project
   root on every start, which walks the EFS-backed `sites/` tree regardless of the marker. Some
-  per-start EFS cost remains after this decision; it is not addressed here.
+  per-start EFS cost remains after this decision; it is not addressed here.~~
+  **Resolved by [adr/0008](0008-remove-htaccess-hardening-from-after-start.md).** That pass was
+  removed. It was also measured to have no durable effect, because
+  `ensure_sites_files_permissions` overwrote the only path it uniquely covered straight afterward.
 - This reverses part of the consequence recorded in
   [adr/0004](0004-gate-after-start-with-a-per-version-marker.md): the marker is no longer
   per-container, and the gate no longer covers permission hardening as a whole, only the `sites/`

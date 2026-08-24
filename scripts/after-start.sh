@@ -134,11 +134,13 @@ harden_mounted_volumes() {
     chmod -R 700 "${project_root}/temp" 2>/dev/null || true
   fi
 
-  # Secure ALL .htaccess files across entire Drupal installation (644, root-owned)
-  # These are critical security files that control access and block PHP execution
-  log "Securing all .htaccess files (root:www-data, 644)..."
-  find "${project_root}" -name ".htaccess" -exec chown root:www-data {} + 2>/dev/null || true
-  find "${project_root}" -name ".htaccess" -exec chmod 644 {} + 2>/dev/null || true
+  # No blanket .htaccess pass here. Finding them meant walking every directory
+  # under the project root, including the EFS-backed sites/ tree and its upload
+  # directories, on every container start. The .htaccess files that this pass
+  # actually protected durably are already covered: the ones inside the code
+  # paths above by their own `-type f` chmod, and web/.htaccess by the
+  # root-level pass above. Per-site .htaccess hardening is handled by an
+  # external script that traverses each site. See adr/0008.
 
   log "Volume hardening complete."
 }

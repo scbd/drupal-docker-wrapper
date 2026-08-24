@@ -45,14 +45,23 @@ until it answers with any HTTP status, or the timeout elapses, then runs `after-
    excludes `robots.txt` from drupal-scaffold and deletes the upstream image's copy, so this step is normally a no-op.
    Runs on every start.
 2. **Hardens image-resident code permissions** (in the background, every start): `web/core`, `modules`, `themes`,
-   `profiles`, `libraries`, `vendor` become `root:www-data` 755/644; `temp/` becomes `root:root` 700; all `.htaccess`
-   become 644. These paths ship inside the image, which the build leaves `www-data`-owned, so this step runs on
-   every container start regardless of any marker.
+   `profiles`, `libraries`, `vendor` become `root:www-data` 755/644, and root-level `web/` files (e.g. `index.php`,
+   `web/.htaccess`) get the same 644 `root:www-data` treatment; `temp/` becomes `root:root` 700. These paths ship
+   inside the image, which the build leaves `www-data`-owned, so this step runs on every container start
+   regardless of any marker.
 3. **Locks down `web/sites`** (in the same background pass): directories 755, files 644, `settings*.php` /
    `services*.yml` tightened to 440 `root:www-data`, and only `sites/*/files` left writable
    (`www-data:www-data` 775). This is the expensive recursive pass over the EFS-backed `sites/` tree, so it is
    **gated by a per-version marker on the mounted `temp/` volume** (falling back to `/tmp` when no volume is
    mounted): once per wrapper version per volume, not once per container start.
+
+There is no blanket `.htaccess` pass in after-start any more. It used to walk every directory under the project
+root, including the EFS-backed `sites/*/files` upload trees, on every start, and it changed nothing: the code-path
+`.htaccess` files were already covered by their own `-type f` chmod above, `web/.htaccess` was already covered by
+the root-level pass above, and the one file it uniquely touched, `sites/*/files/.htaccess`, was immediately
+overwritten back to `775 www-data:www-data` by the `sites/` lockdown pass that runs right after it. See
+[adr/0008](docs/adr/0008-remove-htaccess-hardening-from-after-start.md). Per-site `.htaccess` hardening, where
+wanted, is now an operator-owned script outside this repo.
 
 There is no cache rebuild step in after-start. It was removed because it never worked on multisite: it ran
 `drush cache:rebuild` with no site URI, which only bootstraps the default site, and it was gated on

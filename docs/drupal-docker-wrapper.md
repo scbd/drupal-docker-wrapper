@@ -36,10 +36,13 @@ projects actually depend on is a small, stable surface:
   Drupal that already has its contrib dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, etc.)
   pinned and present.
 - **The after-start guarantees.** On every container start, the wrapper cleans up deprecated paths
-  and hardens image-resident code permissions (read-only `root:www-data`). The `sites/*/files`
-  permission pass runs once per image version per mounted volume, not on every start. The custom
-  modules can assume this baseline; they do not run it themselves. There is no cache rebuild in
-  this list; see [adr/0007](../adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
+  and hardens image-resident code permissions (read-only `root:www-data`, `.htaccess` files inside
+  those trees included). The `sites/*/files` permission pass runs once per image version per
+  mounted volume, not on every start. The custom modules can assume this baseline; they do not run
+  it themselves. There is no cache rebuild in this list; see
+  [adr/0007](../adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md). There is also
+  no `.htaccess` hardening under `sites/*/files` in this list any more; see
+  [adr/0008](../adr/0008-remove-htaccess-hardening-from-after-start.md).
 
 What is intentionally *not* in the interface: the build stages and the dormant startup patch
 mechanism. Those are implementation, hidden behind the surface above.
@@ -57,9 +60,10 @@ See this repo's [adr/0002](../adr/0002-pin-contrib-modules-in-a-dedicated-build-
 [adr/0003](../adr/0003-two-phase-startup-entrypoint-and-after-start.md),
 [adr/0004](../adr/0004-gate-after-start-with-a-per-version-marker.md),
 [adr/0005](../adr/0005-remove-runtime-module-repair.md),
-[adr/0006](../adr/0006-move-after-start-marker-to-the-mounted-volume.md), and
-[adr/0007](../adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md) for the decisions
-behind these.
+[adr/0006](../adr/0006-move-after-start-marker-to-the-mounted-volume.md),
+[adr/0007](../adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md), and
+[adr/0008](../adr/0008-remove-htaccess-hardening-from-after-start.md) for the decisions behind
+these.
 
 ## Workflow transitions
 

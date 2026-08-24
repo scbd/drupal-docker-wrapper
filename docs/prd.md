@@ -130,14 +130,18 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
   directory, so `web/modules/contrib`, `web/core`, and `vendor` always come from the image and cannot
   drift underneath it.
 - **Privilege separation and permission hardening.** Code is `root:www-data` read-only (dirs 755,
-  files 644), `temp/` is `root:root` 700, every `.htaccess` is forced to 644, `settings*.php` and
-  `services*.yml` under `web/sites` are tightened to `root:www-data` 440, and only `sites/*/files`
-  is writable (`www-data:www-data` 775). `gosu` is preserved in the image so an operator can run
-  drush as www-data by hand (e.g. `gosu www-data vendor/bin/drush @lk cache:rebuild`); no script
-  invokes it. The previous
+  files 644, which covers the `.htaccess` files inside those trees and `web/.htaccess`), `temp/` is
+  `root:root` 700, `settings*.php` and `services*.yml` under `web/sites` are tightened to
+  `root:www-data` 440, and only `sites/*/files` is writable (`www-data:www-data` 775). `gosu` is
+  preserved in the image so an operator can run drush as www-data by hand (e.g.
+  `gosu www-data vendor/bin/drush @lk cache:rebuild`); no script invokes it. The previous
   `ensure_runtime_ownership` (which made code www-data-writable) was removed for security, and the
   blanket `chmod -R 755` that used to run over all of `web/sites` was replaced by the 644/440 split
-  above because it left `settings.php` world-readable and world-executable.
+  above because it left `settings.php` world-readable and world-executable. There is also no
+  blanket `.htaccess` pass across the project root any more: it walked the EFS-backed
+  `sites/*/files` upload trees on every start and its one unique target was immediately overwritten
+  by the `sites/*/files` unlock above, so it changed no resulting permission. See
+  `docs/adr/0008-...`.
 - **Startup patch application is active, and optional.** `lib/patches.sh` (multiple `patch`
   strategies, applied markers, ignores `patches/old/`) ships in the image and is invoked from
   `entrypoint.sh` before Apache starts. It degrades safely on either failure mode: a missing
@@ -183,8 +187,9 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
   start.
 - CI fails the build when a key module directory is missing or PHP/Drush are broken (smoke test
   catches it before any publish).
-- 0 occurrences of the web user being able to write to `web/core`, `web/modules`, `vendor`, or any
-  `.htaccess` after hardening completes.
+- 0 occurrences of the web user being able to write to `web/core`, `web/modules`, `vendor`, or the
+  `.htaccess` files inside them, after hardening completes. (`sites/*/files` stays writable by the
+  web user by design, for uploads; that includes its `.htaccess`.)
 - Build context contains no `.env*` or archived patch files (verified by `.dockerignore`).
 
 ## Out of Scope

@@ -373,11 +373,15 @@ temporarily suppressed for BL-695 (remove per Drupal #3599842).
 
 **Permission hardening adapter.**
 `after-start.sh` → `harden_mounted_volumes` + `ensure_sites_files_permissions`: makes the code
-tree read-only (`root:www-data`, dirs 755 / files 644), locks `temp/` to `root:root` 700, forces
-every `.htaccess` to 644, tightens `settings*.php`/`services*.yml` under `web/sites` to `440`
-`root:www-data`, and leaves only `sites/*/files` writable (`www-data:www-data` 775). Root is used
-only for this hardening step and for binding port 80. No script runs Drush; `gosu` is kept in the
-image so an operator can run it as `www-data` by hand (e.g. a per-site cache rebuild).
+tree read-only (`root:www-data`, dirs 755 / files 644, which covers `.htaccess` files inside those
+trees and `web/.htaccess`), locks `temp/` to `root:root` 700, tightens
+`settings*.php`/`services*.yml` under `web/sites` to `440` `root:www-data`, and leaves only
+`sites/*/files` writable (`www-data:www-data` 775). Root is used only for this hardening step and
+for binding port 80. No script runs Drush; `gosu` is kept in the image so an operator can run it as
+`www-data` by hand (e.g. a per-site cache rebuild). There is no blanket `.htaccess` find over the
+whole project root any more: it walked the EFS-backed `sites/*/files` upload trees on every start,
+and its one unique target was immediately overwritten by the `sites/*/files` unlock above, so it
+changed no resulting permission. See [adr/0008](adr/0008-remove-htaccess-hardening-from-after-start.md).
 
 **CI / release adapter.**
 GitHub Actions: `lint` (markdownlint + hadolint) gates `build-test` (docker build + smoke-test). The
@@ -419,6 +423,7 @@ Recorded in [docs/adr/](adr/). Rationale lives there; not restated here.
 | [0005](adr/0005-remove-runtime-module-repair.md) | Remove runtime module repair and the per-module integrity hashes, since the mount contract never bind-mounts contrib and it cannot drift |
 | [0006](adr/0006-move-after-start-marker-to-the-mounted-volume.md) | Move the marker off `/tmp` onto the mounted `temp/` volume so the gate is per-volume, not per-container; narrow the gate to only the `sites/` pass |
 | [0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md) | Remove the after-start cache rebuild: it never rebuilt more than one site on a multisite install; a per-site rebuild is now a deploy-process responsibility |
+| [0008](adr/0008-remove-htaccess-hardening-from-after-start.md) | Remove the blanket `.htaccess` find over the whole project root: it walked the EFS-backed `sites/*/files` trees on every start and changed no resulting permission |
 
 ---
 
@@ -465,6 +470,7 @@ clears stale markers and re-runs it. Cleanup and hardening happen every start re
 | **No scheduled weekly rebuild** | CI | README calls for a weekly rebuild to pick up upstream base-image security patches; the automation is not yet in place. |
 | **No end-to-end test crossing the mount seam** | cross | No automated test verifies that the custom-module overlay + contrib pin produce a working Drupal site end-to-end. The smoke test checks PHP, Drush, and key module directories but not a live page render. |
 | **Cache rebuild moved to deploy process** | deploy process | The container no longer rebuilds the Drupal cache. A deploy that changes module or patch code must run a per-site `drush cache:rebuild` through the mounted drush aliases itself; nothing in this image catches a deploy that skips it. See [adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md). |
+| **`.htaccess` hardening under `sites/*/files` moved to an external script** | operator | The container no longer resets ownership or mode on `sites/*/files/.htaccess`; `ensure_sites_files_permissions` sets it to `775 www-data:www-data` along with the rest of each `files/` directory. The file still blocks PHP execution there. An external, operator-owned per-site script is the only thing that can harden its mode and owner now. See [adr/0008](adr/0008-remove-htaccess-hardening-from-after-start.md). |
 
 ---
 
@@ -481,9 +487,10 @@ checklist.
       logs "already done on this volume" and skips the pass. Image-code hardening still runs.
 - [ ] A new image version causes the `sites/` pass to re-run on a given volume (old marker no
       longer matches, and is purged).
-- [ ] The web user (`www-data`) cannot write to `web/core/`, `web/modules/`, `vendor/`, or any
-      `.htaccess` file after hardening completes.
-- [ ] Only `sites/*/files` is writable by `www-data` after hardening.
+- [ ] The web user (`www-data`) cannot write to `web/core/`, `web/modules/`, `vendor/`, or the
+      `.htaccess` files inside them, after hardening completes.
+- [ ] Only `sites/*/files` is writable by `www-data` after hardening. That includes its
+      `.htaccess`, by design; see [adr/0008](adr/0008-remove-htaccess-hardening-from-after-start.md).
 - [ ] Build context contains no `.env*` or archived patch files (`.dockerignore` enforcement).
 - [ ] CI fails the build when a key module directory (`jsonapi_extras`, `search_api`) is missing or
       PHP / Drush are broken (smoke test).

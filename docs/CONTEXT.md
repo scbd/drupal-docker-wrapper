@@ -97,10 +97,24 @@ responsibility, run per site through the mounted drush aliases (see **Mount cont
 _Avoid_: describing this as still present in `after-start.sh`, or as automatic.
 
 **Permission hardening**:
-The after-start step that makes code read-only (`root:www-data`, dirs 755 / files 644), locks
-`temp/` to `root:root` 700, tightens `settings*.php` and `services*.yml` to `440` root:www-data,
-fixes every `.htaccess` to 644, and leaves only `sites/*/files` writable (`www-data:www-data` 775).
-_Avoid_: chown pass, lockdown, securing.
+The after-start step that makes code read-only (`root:www-data`, dirs 755 / files 644, which
+covers `.htaccess` files inside those trees), locks `temp/` to `root:root` 700, tightens
+`settings*.php` and `services*.yml` to `440` root:www-data, and leaves only `sites/*/files`
+writable (`www-data:www-data` 775).
+_Avoid_: chown pass, lockdown, securing, claiming this hardens `.htaccess` under `sites/*/files`
+(see **.htaccess pass**).
+
+**.htaccess pass** _(removed from after-start)_:
+A former `harden_mounted_volumes` step that walked every directory under the project root looking
+for files named `.htaccess`, to `chown root:www-data` and `chmod 644` them. Removed: the walk
+crossed the EFS-backed `sites/*/files` upload trees on every container start, and it changed
+nothing durable. The code-path and root-level `.htaccess` files were already covered by the
+chmod passes above them, and the one file it uniquely touched, `sites/*/files/.htaccess`, was
+overwritten back to `775 www-data:www-data` by the `sites/*/files` unlock in **Permission
+hardening** immediately afterward. See
+[adr/0008](adr/0008-remove-htaccess-hardening-from-after-start.md). Per-site `.htaccess`
+hardening, where wanted, is now an external, operator-owned script outside this repo.
+_Avoid_: describing this as present in `harden_mounted_volumes`, or as covering `sites/*/files`.
 
 **Privilege separation**:
 The rule that root is used only to fix permissions and bind port 80, after which drush and other

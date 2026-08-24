@@ -315,7 +315,7 @@ repo). Each site's stack bind-mounts exactly five paths from EFS: `php/custom.in
 | Startup latency | Apache serving in seconds | Thin entrypoint starts Apache immediately and exec-chains the upstream entrypoint; all heavy work is forked to the after-start phase |
 | Idempotent provisioning | Expensive EFS work runs once per version per volume; image-code hardening runs every start | The `sites/` permission pass is gated by a marker on the mounted `temp/` volume (falls back to `/tmp`); `harden_mounted_volumes` and cleanup are ungated and run on every container start |
 | Health observability | Container reports healthy independently of provisioning | HTTP `HEALTHCHECK` on `/` with a 40s start period; never blocked by patch application or drush |
-| Security / least privilege | Web user cannot write code | Privilege separation: root only for permission fixes and port bind; code `root:www-data` read-only, only `sites/*/files` writable; all `.htaccess` forced to 644; `gosu` is kept for an operator to run drush as www-data by hand |
+| Security / least privilege | Web user cannot write code | Privilege separation: root only for permission fixes and port bind; code `root:www-data` read-only (dirs 755, files 644, `.htaccess` included), only `sites/*/files` writable; `gosu` is kept for an operator to run drush as www-data by hand |
 | Supply-chain control | Auditable, explicit dependencies | Versions visible in the `Dockerfile`; `modules-versions.txt` manifest (`composer show --direct` output) for human-inspectable audit; `.dockerignore` keeps `.env*` and archived patches out of the build context |
 | Image build efficiency | Fast incremental rebuilds | Multi-stage build; module installs isolated in `with-modules`; apt and Composer caches mounted; build-only tools purged before `final` |
 
@@ -337,6 +337,8 @@ Recorded in `docs/adr/` (rationale lives there, not restated here):
 - `docs/adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md` - why the after-start
   cache rebuild was removed, and why the per-site rebuild it used to attempt is now a deploy-process
   responsibility.
+- `docs/adr/0008-remove-htaccess-hardening-from-after-start.md` - why the blanket `.htaccess` find
+  over the whole project root was removed, and why it changed no resulting permission.
 
 ## 11. Risks & Open Questions
 
@@ -356,3 +358,8 @@ Recorded in `docs/adr/` (rationale lives there, not restated here):
   the mounted drush aliases as a separate deploy step. Nothing in this image detects or enforces
   that; a deploy that skips it can serve from a stale service container or route table. See
   `docs/adr/0007-...`.
+- **No in-container guarantee on `sites/*/files/.htaccess` ownership or mode.**
+  `ensure_sites_files_permissions` sets everything under each `files/` directory, `.htaccess`
+  included, to `775 www-data:www-data`. The file's content still blocks PHP execution there; only
+  its mode and owner are unmanaged by this image. An external, operator-owned script is now the
+  only thing that can harden it. See `docs/adr/0008-...`.
