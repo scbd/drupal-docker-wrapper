@@ -11,14 +11,14 @@ WORKDIR /opt/drupal
 
 # System packages (keep minimal) - cache apt metadata
 # gosu is needed for dropping privileges in entrypoint
-# jq is needed for parsing composer.lock in after-start.sh
+# jq is needed for reading the wrapper version from package.json (after-start marker)
 # nano is a text editor for debugging inside the container
 # default-mysql-client is needed for database operations and drush sql commands
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-$TARGETARCH,sharing=locked \
     set -eux; \
     apt-get update -y; \
-    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano default-mysql-client rsync; \
+    apt-get install --no-install-recommends -y curl ca-certificates unzip gosu jq nano default-mysql-client; \
     rm -rf /var/lib/apt/lists/*
 
 # Install AWS CLI v2
@@ -138,18 +138,11 @@ RUN --mount=type=cache,target=/root/.composer/cache \
       --no-interaction \
       --no-progress \
       --optimize-autoloader; \
-    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt; \
-    # Generate SHA256 hashes for all contrib modules (used for integrity checking at runtime)
-    find /opt/drupal/web/modules/contrib -mindepth 1 -maxdepth 1 -type d -exec sh -c '\
-      for dir; do \
-        module=$(basename "$dir"); \
-        find "$dir" -type f -name "*.php" -o -name "*.info.yml" -o -name "composer.json" 2>/dev/null | \
-          sort | xargs cat 2>/dev/null | sha256sum | cut -d" " -f1 > "/opt/drupal/web/modules/contrib/.${module}.hash"; \
-      done' _ {} +
+    composer show --no-interaction --direct > /opt/drupal/modules-versions.txt
 #       'drupal/jsonapi_extras:3.27' \
 
 
-# Keep 'patch' and 'git' at runtime so entrypoint and composer operations succeed
+# Keep 'patch' and 'git' at runtime so the entrypoint's patch-application step succeeds
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-$TARGETARCH,sharing=locked \
     set -eux; \
