@@ -115,6 +115,12 @@ harden_image_code() {
   # covers every CLI entry point and the binaries they exec, whether composer
   # emitted symlinks or proxy scripts, so a separate pass over vendor/bin could
   # only ever re-do a subset of it.
+  #
+  # Note the pass is preservative, not restorative: it keeps an execute bit that
+  # already exists and never grants one. That is correct while vendor/ is produced
+  # by composer inside the image, which sets the bits. If vendor/ ever arrives from
+  # somewhere that normalises modes - a COPY from a mode-flattening context, a
+  # restored CI cache - every entry point lands 644 and nothing here repairs it.
 
   # Root-level web files (index.php, update.php, etc.)
   log "Securing root-level web files (root:www-data, 644)..."

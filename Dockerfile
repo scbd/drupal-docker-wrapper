@@ -21,17 +21,23 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked \
 #
 # amd64 only, deliberately. This image is built and deployed for linux/amd64;
 # nothing consumes an arm64 build, so the archive below is pinned to x86_64
-# rather than parameterised. See adr/0010 - if an arm64 target ever appears,
-# that record says exactly what to reinstate.
+# rather than parameterised. Recorded in adr/0010, which lands with the docs set.
+# To reinstate arm64: re-add `ARG TARGETARCH` to each stage, split the apt cache
+# ids back out per arch, map amd64->x86_64 / arm64->aarch64 onto the archive name
+# below, and expect to debug the GD/AVIF rebuild, which has never been built for
+# arm64.
 #
 # The `aws --version` check is load-bearing, not decoration. `./aws/install` exits 0
 # even when the bundled x86_64 binary cannot execute - on an arm64 builder it prints
 # "rosetta error: failed to open elf" and then "You can now run: aws --version", and
 # `set -e` sees success. Without this assertion a `docker build` on an Apple Silicon
 # machine silently produces an image whose aws is dead on first use.
+ARG AWSCLI_VERSION=2.36.31
+ARG AWSCLI_SHA256=96ab904b1fec2b49972685aecc1d2e8c0fd0c981d7a81f5dc5d2dd725ace05f1
 RUN set -eux; \
-    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; \
-    unzip awscliv2.zip; \
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${AWSCLI_VERSION}.zip" -o awscliv2.zip; \
+    echo "${AWSCLI_SHA256}  awscliv2.zip" | sha256sum -c -; \
+    unzip -q awscliv2.zip; \
     ./aws/install; \
     rm -rf aws awscliv2.zip; \
     aws --version
@@ -163,6 +169,20 @@ RUN --mount=type=cache,target=/root/.composer/cache \
     # module owns the route instead of being shadowed by a static file.
     rm -f /opt/drupal/web/robots.txt
 
+# Fail the build on a known-vulnerable dependency.
+#
+# This is what makes deleting the BL-695 suppression safe to keep. The direct
+# requires above are exact-pinned, but --with-all-dependencies re-resolves every
+# transitive against packagist on each build, so "guzzle is past the affected
+# range" is a fact about one resolution, not about this Dockerfile. Without this
+# line the removal would take the last build-time advisory signal with it, and a
+# future rebuild could quietly pull a vulnerable transitive.
+#
+# If this ever fails, do not re-add an ignore-id. Find out what moved.
+RUN --mount=type=cache,target=/root/.composer/cache \
+    set -eux; \
+    composer audit --no-dev
+
 # Keep 'patch' and 'git' at runtime so the entrypoint's patch-application step succeeds
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache,sharing=locked \
@@ -211,15 +231,39 @@ RUN set -eux; \
     chown -R root:root /opt/drupal/patches; \
     chmod 755 /opt/drupal/patches; \
     find /opt/drupal/patches -type f -exec chmod 644 {} +; \
-    test "$(stat -c '%U' /opt/drupal/patches)" = root
+    test -z "$(find /opt/drupal/patches ! -user root -print -quit)"; \
+    # Root-own the project directory NODE (not -R). Directory write permission
+    # governs creating and removing entries, not their ownership, so a www-data
+    # /opt/drupal would let a compromised worker rename patches/ aside and put its
+    # own directory there. It could not get a patch applied - the engine refuses
+    # anything it does not own - but it could make the shipped patch vanish, and
+    # that patch is an authorization gate. Losing it logs only "No patch files
+    # found", which reads like a normal build.
+    chown root:root /opt/drupal; \
+    test "$(stat -c '%U' /opt/drupal)" = root
 
 # Copy package.json for version tracking
 COPY --chown=www-data:www-data ./package.json /opt/drupal/
 
 # Copy entrypoint wrapper, after-start script, and lib helpers
-COPY --chown=www-data:www-data ./scripts/*.sh /usr/local/bin/
-COPY --chown=www-data:www-data ./scripts/lib/ /usr/local/bin/lib/
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/after-start.sh
+#
+# root-owned and not group/other-writable, without exception. entrypoint.sh runs as
+# root and `source`s lib/common.sh and lib/patches.sh as root before Apache binds,
+# then execs after-start.sh as root. If www-data can write any of the four, a single
+# Drupal file-write primitive plus one container restart is container root - and it
+# bypasses the patch engine's own provenance check entirely, because editing the
+# engine is easier than getting a patch past it. Nothing at runtime needs these
+# writable; entrypoint.sh only reads them.
+COPY --chown=root:root ./scripts/*.sh /usr/local/bin/
+COPY --chown=root:root ./scripts/lib/ /usr/local/bin/lib/
+RUN set -eux; \
+    chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/after-start.sh; \
+    chmod 644 /usr/local/bin/lib/*.sh; \
+    for f in /usr/local/bin/entrypoint.sh /usr/local/bin/after-start.sh \
+             /usr/local/bin/lib/common.sh /usr/local/bin/lib/patches.sh; do \
+      test "$(stat -c '%U' "$f")" = root; \
+      test -z "$(find "$f" -maxdepth 0 \( -perm -g+w -o -perm -o+w \) -print)"; \
+    done
 
 # Ensure Composer home/cache is writable for www-data
 ENV COMPOSER_HOME=/var/www/.composer \
@@ -229,8 +273,11 @@ RUN set -eux; \
     chown -R www-data:www-data /var/www/.composer
 
 # (Optional) HEALTHCHECK - simple HTTP check on root path
+# 127.0.0.1, not localhost: if localhost resolves to ::1 first and Apache's Listen 80
+# is v4-only, the probe fails while the container is serving normally - which on ECS
+# is a task-replacement loop. Matches the entrypoint's readiness probe.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS http://localhost/ -o /dev/null || exit 1
+    CMD curl -fsS http://127.0.0.1/ -o /dev/null || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["apache2-foreground"]
