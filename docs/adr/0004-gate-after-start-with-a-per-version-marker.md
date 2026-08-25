@@ -11,35 +11,35 @@ origin: standalone
 # 0004. Gate after-start work with a per-version marker file
 
 > **Superseded 2026-08-24 by [adr/0009](0009-confine-after-start-to-image-code.md).** The marker no
-> longer exists. It gated the recursive `sites/` permission pass and the other EFS-walking work; that
-> work was removed from after-start entirely, and the gate went with it. What remains only walks the
-> image's own tree and is cheap enough to repeat unconditionally.
+> longer exists. It gated the recursive `sites/` permission pass and the other EFS-walking work;
+> that work left after-start entirely and the gate went with it. What remains walks only the image's
+> own tree and is cheap to repeat unconditionally.
 
-The after-start phase guards its expensive, one-time work with a marker file named
-`after-start-<version>.complete`, where the version is read from the image's bundled
-`package.json`. If the marker exists, after-start skips the work it guards. On a fresh run it first
-deletes any stale `after-start-*.complete` markers, does its work, then touches the current marker.
+After-start guards its expensive, one-time work with a marker file `after-start-<version>.complete`,
+the version read from the image's bundled `package.json`. If the marker exists, after-start skips
+the guarded work. On a fresh run it deletes stale `after-start-*.complete` markers, does the work,
+then touches the current marker.
 
-We gate on a version-stamped marker so the expensive permission work runs once per image version
-rather than on every restart. A plain container restart skips the gated work when the marker is
-already there; an upgrade to a new image version re-runs it, because the bundled `package.json`
-version changes and the old marker no longer matches.
+Why version-stamped: the expensive permission work runs once per image version rather than every
+restart. A plain restart skips it; an upgrade re-runs it, because the bundled `package.json` version
+changes and the old marker no longer matches.
 
-> **Amended 2026-08-24.** The marker's location and the scope of what it gates were revised. See
-> [adr/0006](0006-move-after-start-marker-to-the-mounted-volume.md) for where the marker lives now,
-> why, and why the gate covers only the `sites/` permission pass rather than all of after-start's
-> work. The cache rebuild referenced below as part of the gated work was later removed entirely,
-> not just re-scoped; see [adr/0007](0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
+> **Amended 2026-08-24.** The marker's location and gate scope were revised - see
+> [adr/0006](0006-move-after-start-marker-to-the-mounted-volume.md). The cache rebuild referenced
+> below as gated work was later removed entirely, not re-scoped; see
+> [adr/0007](0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
-## Considered Options
+<details>
+<summary>3 rejected alternatives</summary>
 
-- **No gate, run every start** - rejected: redoes permission hardening on every restart, which is
-  slow and pointless when nothing changed.
-- **A version-less marker** (`/tmp/after-start.complete`) - rejected: an upgraded image would see the
-  old marker and skip the work it needs to run, so the permission pass would not re-run for the new
-  version.
-- **A persistent on-disk marker** (in the project tree) - rejected: provisioning should re-run on a
-  new container, and a persisted marker would survive into containers that need the work.
+- **No gate, run every start** - redoes permission hardening on every restart, slow and pointless
+  when nothing changed.
+- **A version-less marker** (`/tmp/after-start.complete`) - an upgraded image would see the old
+  marker and skip work it needs, so the permission pass would not re-run for the new version.
+- **A persistent on-disk marker** (in the project tree) - would survive into new containers that
+  need the work.
+
+</details>
 
 ## Consequences
 

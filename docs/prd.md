@@ -8,25 +8,22 @@ date: 2026-06-24
 
 ## Problem Statement
 
-Teams across bioland need a Drupal 11 environment that is identical everywhere: the same core, the
-same contrib modules at the same versions, the same CLI tooling, whether a developer is running it
-on a laptop, CI is smoke-testing it, or it is deployed under the production Swarm stacks. Building
-that from the upstream `drupal:11.x-php8.4` image by hand is slow and drifts: each person resolves
-contrib versions differently, and security advisories and patches are applied inconsistently. Nobody
-wants to wait on a long composer install before the container is usable, and nobody wants the web
-server able to overwrite its own code.
+Teams across bioland need a Drupal 11 environment that is identical on a laptop, in CI, and under
+the production Swarm stacks: same core, same contrib versions, same CLI tooling. Building that from
+`drupal:11.x-php8.4` by hand is slow and drifts - each person resolves contrib differently, and
+advisories and patches land inconsistently. Nobody wants to wait on a long composer install before
+the container is usable, or the web server able to overwrite its own code.
 
 ## Solution
 
-A reusable Drupal 11 base Docker image (`scbd/drupal-docker-wrapper`) that pins every contrib module
-and Drush to an exact version at build time and ships a `modules-versions.txt` manifest for
-auditability. The deployed Swarm stack bind-mounts only five paths per site - `custom.ini`,
-`modules/custom`, `sites`, `drush`, and `temp` - so core, contrib, and `vendor` always come from the
-image and cannot drift at runtime. The image starts in two phases: Apache comes up immediately while
-a background after-start script does the remaining privilege-sensitive provisioning (cleaning
-deprecated paths, hardening the image's own code permissions) on every start. Other bioland repos
-build their sites on top of this image; the custom
-modules and the bioland-head Nuxt frontend layer onto it without being part of it.
+A reusable Drupal 11 base image (`scbd/drupal-docker-wrapper`) that pins every contrib module and
+Drush to an exact version at build time and ships a `modules-versions.txt` manifest. The deployed
+Swarm stack bind-mounts only five paths per site - `custom.ini`, `modules/custom`, `sites`, `drush`,
+`temp` - so core, contrib, and `vendor` always come from the image and cannot drift at runtime. The
+image starts in two phases: Apache comes up immediately while a background after-start script cleans
+deprecated paths and hardens the image's own code permissions on every start. Other bioland repos
+build their sites on top of this image; the custom modules and the bioland-head Nuxt frontend layer
+onto it without being part of it.
 
 ## User Stories
 
@@ -91,71 +88,63 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 
 ## Implementation Decisions
 
-- **Multi-stage build with module installs isolated.** Three stages: `base-core` (core, system
-  packages, GD-with-AVIF, composer config), `with-modules` (the composer-patches plugin, then one
-  consolidated `composer require` of all pinned modules plus Drush, then the `modules-versions.txt`
-  manifest via `composer show --direct`), and `final` (production php.ini, labels, docroot symlink,
-  scripts, healthcheck). Isolating module installs keeps a module bump from invalidating the core
-  layer's cache. See `docs/adr/0002-...`.
-- **Exact pins inline in the Dockerfile.** Every contrib module and Drush carry an exact version
-  string in the single `composer require`. The `composer.lock` is retained in the image as the
-  record of that build-time-resolved dependency graph; nothing reads it at runtime.
-- **The composer-patches plugin is required before patched packages.** Patching is wired before any
-  module is pulled so patches can apply during the module install.
-- **Two-phase startup, gated on readiness rather than a fixed delay.** `entrypoint.sh` runs as root,
-  forks a background job that polls `http://127.0.0.1/` until the web server answers - any HTTP
-  status counts as ready, including 301/403/500 - before running `after-start.sh`, and exec-chains
-  the upstream Drupal entrypoint so Apache starts immediately. The poll's timeout, interval, and
-  probe URL are overridable via `DRUPAL_AFTER_START_READY_TIMEOUT` (default 120s),
-  `DRUPAL_AFTER_START_READY_INTERVAL` (default 2s), and `DRUPAL_AFTER_START_READY_URL`, each
-  validated with a logged fallback on a bad value. See `docs/adr/0003-...`.
-- **No gating, because nothing expensive is left.** After-start touches no bind mount: deprecated-path
-  cleanup and image-resident code hardening (`harden_image_code`) both act only on paths that ship in
-  the image, on local disk, so they are cheap to repeat and run unconditionally on every start. There
-  is no completion marker, no marker directory, and no stale-marker purge to reason about. See
-  `docs/adr/0009-...`.
-- **No cache rebuild in the container.** `after-start.sh` used to run `drush cache:rebuild` with no
-  site URI, which bootstraps only the default site, gated on `web/sites/default/settings.php`
-  existing, which a multisite install may not have. On this image's only real deployment topology
-  (multisite) it was a no-op or rebuilt one arbitrary site, so it was removed. A per-site cache
-  rebuild is still required after a module or patch change; it is now a deploy-process
-  responsibility, run per site through the mounted drush aliases (`@lk`, `@be`, ...). See
+- **Multi-stage build, module installs isolated.** `base-core` (core, system packages,
+  GD-with-AVIF, composer config), `with-modules` (composer-patches plugin, then one consolidated
+  `composer require` of all pinned modules plus Drush, then `modules-versions.txt` via
+  `composer show --direct`), `final` (production php.ini, labels, docroot symlink, scripts,
+  healthcheck). Isolating module installs keeps a module bump from invalidating the core layer's
+  cache. See `docs/adr/0002-...`.
+- **Exact pins inline in the Dockerfile.** Every contrib module and Drush carry an exact version in
+  the single `composer require`. `composer.lock` is retained as the record of the build-time
+  resolved graph; nothing reads it at runtime.
+- **The composer-patches plugin is required before patched packages**, so patches can apply during
+  the module install.
+- **Two-phase startup, gated on readiness not a fixed delay.** `entrypoint.sh` runs as root, forks a
+  job polling `http://127.0.0.1/` until the web server answers - any HTTP status counts, including
+  301/403/500 - then runs `after-start.sh`, and exec-chains the upstream Drupal entrypoint so Apache
+  starts immediately. Timeout, interval, and probe URL are overridable via
+  `DRUPAL_AFTER_START_READY_TIMEOUT` (default 120s), `DRUPAL_AFTER_START_READY_INTERVAL` (default
+  2s), and `DRUPAL_AFTER_START_READY_URL`, each validated with a logged fallback. See
+  `docs/adr/0003-...`.
+- **No gating, because nothing expensive is left.** After-start touches no bind mount:
+  deprecated-path cleanup and `harden_image_code` act only on image-resident local-disk paths, so
+  they are cheap to repeat and run unconditionally. No completion marker, marker directory, or
+  stale-marker purge. See `docs/adr/0009-...`.
+- **No cache rebuild in the container.** The old `drush cache:rebuild` ran with no site URI (so it
+  bootstrapped only the default site) and was gated on `web/sites/default/settings.php`, which a
+  multisite install may not have. Under multisite it was a no-op or rebuilt one arbitrary site, so
+  it was removed. A per-site rebuild is still required after a module or patch change; it is now a
+  deploy responsibility, run through the mounted drush aliases (`@lk`, `@be`, ...). See
   `docs/adr/0007-...`.
-- **No runtime composer invocation.** The runtime module-repair step that used to compare installed
-  contrib against `composer.lock` and re-run `composer install` was removed, along with the
-  `DRUPAL_SKIP_MODULE_REPAIR` and `DRUPAL_AFTER_START_FORCE_MODULE_REPAIR` variables that controlled
-  it. It is unneeded: the deployed stack bind-mounts only `modules/custom`, never the whole `modules`
-  directory, so `web/modules/contrib`, `web/core`, and `vendor` always come from the image and cannot
-  drift underneath it.
-- **Privilege separation and permission hardening, confined to image code.** The image's own code -
-  `web/core`, `web/modules/contrib`, `web/themes`, `web/profiles`, `web/libraries`, `vendor`, and the
-  root-level `web/*` files - is made `root:www-data` read-only (dirs 755, files 644, which covers the
-  `.htaccess` files inside those trees and `web/.htaccess`), with the execute bit restored on
-  `vendor/bin` entries and their targets. Nothing under the five bind mounts is touched: `web/sites`,
-  `modules/custom`, `drush`, `temp`, and `custom.ini` belong to the deploy. In particular **nothing in
-  the container tightens `settings*.php` or `services*.yml` any more** - a mount that ships
-  `settings.php` world-readable will stay world-readable, and that hardening has to happen where the
-  mount is defined or in the external per-site script that already owns `.htaccess` under
-  `sites/*/files`. `gosu` is preserved in the image so an operator can run drush as www-data by hand
-  (e.g. `gosu www-data vendor/bin/drush @lk cache:rebuild`); no script invokes it. The previous
-  `ensure_runtime_ownership` (which made code www-data-writable) was removed for security. There is
-  also no blanket `.htaccess` pass across the project root any more: it walked the EFS-backed
-  `sites/*/files` upload trees on every start and changed no durable permission. See
+- **No runtime composer invocation.** The module-repair step comparing installed contrib against
+  `composer.lock` was removed, with its `DRUPAL_SKIP_MODULE_REPAIR` and
+  `DRUPAL_AFTER_START_FORCE_MODULE_REPAIR` variables. Only `modules/custom` is bind-mounted, so
+  `web/modules/contrib`, `web/core`, and `vendor` cannot drift underneath it.
+- **Permission hardening confined to image code.** `web/core`, `web/modules/contrib`, `web/themes`,
+  `web/profiles`, `web/libraries`, `vendor`, and the root-level `web/*` files become `root:www-data`
+  read-only (dirs 755, files 644, covering the `.htaccess` files inside them and `web/.htaccess`),
+  with the execute bit restored on `vendor/bin` entries and their targets. Nothing under the five
+  bind mounts is touched. In particular **nothing in the container tightens `settings*.php` or
+  `services*.yml` any more** - a mount shipping `settings.php` world-readable stays world-readable,
+  and that hardening must happen where the mount is defined, or in the external per-site script that
+  already owns `.htaccess` under `sites/*/files`. `gosu` is preserved so an operator can run drush as
+  www-data by hand (e.g. `gosu www-data vendor/bin/drush @lk cache:rebuild`); no script invokes it.
+  The previous `ensure_runtime_ownership` (which made code www-data-writable) was removed for
+  security, and the blanket `.htaccess` pass across the project root is gone - it walked the
+  EFS-backed `sites/*/files` trees every start and changed no durable permission. See
   `docs/adr/0008-...` and `docs/adr/0009-...`.
 - **Startup patch application is active, and optional.** `lib/patches.sh` (`git apply -p1` only, no
   marker files - an already-applied patch is detected with a `git apply --reverse --check` dry run;
-  ignores `patches/old/`) ships in the image and is invoked from
-  `entrypoint.sh` before Apache starts. It degrades safely on either failure mode: a missing
-  `lib/patches.sh` is logged and skipped rather than killing PID 1, and a failing patch step is
-  logged and does not stop Apache from serving. Build-time composer patching (via
-  `cweagans/composer-patches`) remains the path for patches published against a contrib release;
-  this mechanism exists for patches that need to apply against the bind-mounted `modules/custom`
-  tree.
-- **Healthcheck independent of provisioning.** A simple HTTP probe on `/`, with a 40s start period,
-  so the container is reported healthy as soon as Apache serves regardless of after-start progress.
+  ignores `patches/old/`) ships in the image and runs from `entrypoint.sh` before Apache starts. It
+  degrades safely both ways: a missing `lib/patches.sh` is logged and skipped rather than killing
+  PID 1, and a failing patch step does not stop Apache serving. Build-time composer patching (via
+  `cweagans/composer-patches`) stays the path for patches published against a contrib release; this
+  one exists for patches applying against the bind-mounted `modules/custom` tree.
+- **Healthcheck independent of provisioning.** An HTTP probe on `/` with a 40s start period, so the
+  container reports healthy as soon as Apache serves, regardless of after-start progress.
 - **CI on GitHub Actions.** `lint` (markdownlint + hadolint) gates `build-test` (docker build +
-  smoke-test). The `push-images` job derives the tag from the GitHub Release (`github.event.release.tag_name`)
-  and is currently commented out. Build context exclusions live in `.dockerignore`.
+  smoke-test). `push-images` derives the tag from `github.event.release.tag_name` and is currently
+  commented out. Build context exclusions live in `.dockerignore`.
 - **Versioning tracks Drupal core.** The image version (in `package.json` and the git tag) is the
   core version, with a `-vN` suffix only for a later wrapper iteration on the same core.
 - **Temporary advisory ignores (BL-695).** Three guzzle/psr7 advisories are suppressed in
@@ -164,17 +153,15 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 
 ## Testing Decisions
 
-- **Test external behaviour of the built image, not script internals.** The smoke test
-  (`ci/smoke-test.sh`) runs the actual image and asserts observable facts: PHP runs, Drush reports a
-  version, and key contrib module directories (`jsonapi_extras`, `search_api`) exist. This is the
-  right seam because it exercises the real artifact a consumer pulls.
-- **Lint the build and docs.** `ci/lint.sh` runs markdownlint and hadolint, with a hadolint
-  fallback (local binary or docker image) so it works in restricted CI containers.
+- **Test the built image's external behaviour, not script internals.** `ci/smoke-test.sh` runs the
+  real image and asserts observable facts: PHP runs, Drush reports a version, and key contrib
+  directories (`jsonapi_extras`, `search_api`) exist. That is the artifact a consumer pulls.
+- **Lint the build and docs.** `ci/lint.sh` runs markdownlint and hadolint, with a hadolint fallback
+  (local binary or docker image) so it works in restricted CI containers.
 - **Local pipeline parity.** `ci/test-ci-locally.sh` runs the same lint -> build -> smoke-test
-  sequence locally so a developer can reproduce CI before pushing.
-- **Prior art.** The smoke test is the model to copy for any new image-level assertion: start a
-  container, exec a check, assert on its output or filesystem. Keep checks observable and version
-  agnostic where possible.
+  sequence locally.
+- **Prior art.** Copy the smoke test for any new image-level assertion: start a container, exec a
+  check, assert on its output or filesystem. Keep checks observable and version agnostic.
 
 ## Success Metrics
 
@@ -185,8 +172,7 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 - After-start performs 0 filesystem operations under any of the five bind mounts
   (`php/custom.ini`, `web/modules/custom`, `web/sites`, `drush`, `temp`), so container start does no
   recursive I/O over EFS. Image-resident code hardening runs on every container start.
-- CI fails the build when a key module directory is missing or PHP/Drush are broken (smoke test
-  catches it before any publish).
+- CI fails the build when a key module directory is missing or PHP/Drush are broken.
 - 0 occurrences of the web user being able to write to `web/core`, `web/modules/contrib`, `vendor`,
   or the `.htaccess` files inside them, after hardening completes. `web/modules/custom` is
   deliberately excluded - it is a bind mount, so it is deploy-owned. Keeping `sites/*/files`
@@ -195,13 +181,12 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 
 ## Out of Scope
 
-- The custom modules themselves (`bioland`, `scbd_*`) - they live in their own repos and are
-  overlaid at runtime, not built into the image.
-- The bioland-head Nuxt frontend - it consumes the Drupal JSON:API but is a separate product.
+- The custom modules themselves (`bioland`, `scbd_*`) - own repos, overlaid at runtime.
+- The bioland-head Nuxt frontend - consumes the Drupal JSON:API, separate product.
 - The dmsm Swarm stack definitions and EFS provisioning - the deployment substrate lives outside
   this repo; this repo only documents the mount contract it expects.
-- Site installation and content - the image provides Drush and an example, but installing and
-  seeding a site is the consumer's job.
+- Site installation and content - the image provides Drush and an example; installing and seeding a
+  site is the consumer's job.
 - The MySQL database - external, provided by the runtime.
 - Automated weekly base-image rebuilds and re-enabling the publish job - desired (noted in the
   README) but not yet implemented.
@@ -209,9 +194,9 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 ## Further Notes
 
 The central design choice is reproducibility under a runtime that bind-mounts part of the site. The
-build pins core, contrib, and Drush; the deployed Swarm stack's mount contract enforces that pin by
-only ever bind-mounting `custom.ini`, `modules/custom`, `sites`, `drush`, and `temp` for a site -
-never the whole `modules` directory. That is a structural guarantee, not a convention teams have to
-follow: `web/modules/contrib`, `web/core`, and `vendor` are never a bind-mount target, so they cannot
-drift no matter what is on the EFS share behind `modules/custom`. This is why the after-start phase
-no longer does any module reconciliation - there is nothing for it to reconcile.
+build pins core, contrib, and Drush; the mount contract enforces that pin by only ever bind-mounting
+`custom.ini`, `modules/custom`, `sites`, `drush`, and `temp` - never the whole `modules` directory.
+That is a structural guarantee, not a convention teams must follow: `web/modules/contrib`,
+`web/core`, and `vendor` are never a bind-mount target, so they cannot drift no matter what sits on
+the EFS share behind `modules/custom`. This is why after-start no longer does any module
+reconciliation - there is nothing to reconcile.

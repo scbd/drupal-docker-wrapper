@@ -1,13 +1,12 @@
 # Bioland: Context Map
 
-The bounded-context index for the Bioland architectural plan. Each of the five repositories is a
-single bounded context with its own ubiquitous language. This file maps the contexts to their
-spokes, names the relationships between them, and lists the terms that are *shared* or *translated*
-across a boundary - the places where one context's language meets another's.
+The bounded-context index for the Bioland architectural plan. Each of the five repositories is one
+bounded context with its own ubiquitous language. This file maps contexts to spokes, names the
+relationships, and lists the terms *shared* or *translated* across a boundary.
 
 Per-context glossaries: this repo's [CONTEXT.md](CONTEXT.md) is the **CMS Runtime** glossary. Each
-sibling repo keeps its own `docs/CONTEXT.md` for its context (referenced as prose below, not linked,
-since the code lives in another repo).
+sibling repo keeps its own `docs/CONTEXT.md` (referenced as prose below, not linked, since the code
+lives in another repo).
 
 ## Contexts
 
@@ -59,25 +58,26 @@ flowchart TB
 
 ## Shared and translated terms (where languages meet)
 
-- **Term key** - the stable slug a tag persists as (e.g. `GBF-TARGET-03`; national targets are UUIDs).
-  *Shared kernel* across the Thesaurus Field (stores it), the Tag Picker (reads / writes it), and the
-  head (receives it as an opaque comma-separated string - core `string` formatter, never resolved to a
-  label server-side). A change to the key format ripples through all three.
-- **Domain** - a named category drawn from one controlled vocabulary, rendered as one dropdown.
-  *Shared* between the Thesaurus Field (whitelists which domains a field offers) and the Tag Picker
-  (renders each domain, and decides single- vs multi-select via its own `singleValueDomains` default).
-- **`is_biosafety_land` / `isBchSite`** - the same per-tenant mode under two names. *Translated* across
-  the Site Behaviour context (Drupal, derived from DMSM's `multiSiteCode === 'bsl'`) and the Headless
-  context (Nuxt, derived from the host). Both switch branding, active `tags` terms, and exposed menus.
+- **Term key** - the stable slug a tag persists as (e.g. `GBF-TARGET-03`; national targets are
+  UUIDs). *Shared kernel* across the Thesaurus Field (stores it), the Tag Picker (reads / writes
+  it), and the head (receives it as an opaque comma-separated string - core `string` formatter,
+  never resolved to a label server-side). A key-format change ripples through all three.
+- **Domain** - a named category from one controlled vocabulary, rendered as one dropdown. *Shared*
+  between the Thesaurus Field (whitelists which domains a field offers) and the Tag Picker (renders
+  each domain, and decides single- vs multi-select via its own `singleValueDomains` default).
+- **`is_biosafety_land` / `isBchSite`** - one per-tenant mode under two names. *Translated* across
+  Site Behaviour (Drupal, from DMSM's `multiSiteCode === 'bsl'`) and Headless (Nuxt, from the host).
+  Both switch branding, active `tags` terms, and exposed menus.
 - **`siteCode` / `multiSiteCode` / `env`** - the DMSM config key. *Translated* by both Site Behaviour
-  (`parseHostname()`) and the head (`extractSiteCodeFromHost`) from the request host into the same DMSM
-  lookup tuple - independently, which is itself a small duplication worth noting.
+  (`parseHostname()`) and the head (`extractSiteCodeFromHost`) from the request host into the same
+  DMSM lookup tuple - independently, a small duplication worth noting.
 - **content / `node--content`** - the editorial content type. Named `content` in Drupal; surfaced as
   the `node--content` JSON:API resource the head reads.
 
 ## Promotion / maintenance
 
 This map exists because Bioland genuinely crosses bounded contexts (five repos, distinct languages,
-real translation seams). Keep it in step with the spokes: when a seam changes, update the relationship
-row and the shared-terms list here, and the affected spoke's *Owned interface* section. A new shared
-or colliding term across contexts is the trigger to add a row above (per the `docs-context-map` skill).
+real translation seams). Keep it in step with the spokes: when a seam changes, update its
+relationship row, the shared-terms list here, and the affected spoke's *Owned interface* section. A
+new shared or colliding term across contexts is the trigger to add a row (per the
+`docs-context-map` skill).

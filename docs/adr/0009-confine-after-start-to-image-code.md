@@ -10,8 +10,8 @@ supersedes: [0004, 0006]
 
 # 0009. Confine after-start to image code, and drop the version marker with it
 
-After-start no longer touches an EFS bind mount. Every pass that walked one is gone, and with
-them the whole marker-and-gate mechanism that existed to make those passes affordable.
+After-start no longer touches an EFS bind mount. Every pass that walked one is gone, and with them
+the marker-and-gate mechanism that existed to make those passes affordable.
 
 Removed from `after-start.sh`:
 
@@ -27,32 +27,30 @@ Removed from `after-start.sh`:
 
 ## Why
 
-The deployed `dmsm` stack bind-mounts five paths per site: `php/custom.ini`,
-`web/modules/custom`, `web/sites`, `drush`, and `temp`. Their contents and permissions belong to
-the deploy that mounts them, not to the image. After-start was reaching into that storage on
-every container start to fix permissions it does not own, over the network, before the site was
-fully up.
+The deployed `dmsm` stack bind-mounts five paths per site: `php/custom.ini`, `web/modules/custom`,
+`web/sites`, `drush`, `temp`. Their contents and permissions belong to the deploy that mounts them.
+After-start was reaching into that storage on every start to fix permissions it does not own, over
+the network, before the site was fully up.
 
-The cost was real. A recursive `chown`/`chmod` over `web/sites` walks each site's entire upload
-tree on EFS. So does a `find` for `.htaccess` from the project root (ADR 0008). That is why
-ADR 0004 introduced a marker in the first place, and why ADR 0006 moved the marker onto the
-mounted volume so it survived a redeploy: both were mitigations for work that should not have
-been running in the container at all.
+The cost was real: a recursive `chown`/`chmod` over `web/sites` walks each site's entire EFS upload
+tree, as does a `find` for `.htaccess` from the project root (ADR 0008). That is why ADR 0004
+introduced a marker and ADR 0006 moved it onto the mounted volume - both mitigations for work that
+should not have run in the container at all.
 
 Deleting the work deletes the reason for the mitigation. What remains — hardening `web/core`,
-`web/modules/contrib`, `web/themes`, `web/profiles`, `web/libraries`, `vendor`, and the
-root-level web files — only ever walks paths that ship in the image. That is local disk, it is
-the same on every container from a given image, and it is cheap enough to repeat unconditionally.
-A marker guarding it would add a second source of truth about whether the image's own code is
-hardened, and could only ever be wrong in the unsafe direction.
+`web/modules/contrib`, `web/themes`, `web/profiles`, `web/libraries`, `vendor`, and the root-level
+web files — walks only paths that ship in the image: local disk, identical on every container from
+a given image, cheap to repeat unconditionally. A marker guarding it would add a second source of
+truth about whether the image's own code is hardened, and could only be wrong in the unsafe
+direction.
 
 ## Consequences
 
-- **`web/sites` permissions are now entirely the deploy's responsibility.** Nothing in the
-  container tightens `settings*.php` or `services*.yml` any more. That hardening has to happen
-  where the mount is defined, or in the external per-site script that already owns `.htaccess`
-  under `sites/*/files` (ADR 0008). This is the sharpest edge of this decision: a mount that
-  ships `settings.php` world-readable will stay world-readable.
+- **`web/sites` permissions are entirely the deploy's responsibility now.** Nothing in the
+  container tightens `settings*.php` or `services*.yml`. That hardening must happen where the mount
+  is defined, or in the external per-site script that already owns `.htaccess` under `sites/*/files`
+  (ADR 0008). Sharpest edge of this decision: a mount shipping `settings.php` world-readable stays
+  world-readable.
 - **Container start no longer does recursive I/O over network storage.** The remaining pass is
   bounded by the image's own tree.
 - **There is no completion marker to inspect, stale-purge, or reason about**, and no

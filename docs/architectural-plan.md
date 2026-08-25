@@ -1,30 +1,28 @@
-> **Plan vs. as-built.** This is the design-of-record for the **Drupal Docker Wrapper** project.
-> [architecture.md](architecture.md) is the as-built snapshot; when they conflict, `architecture.md`
-> is the truth about the code and this plan is the truth about intent. The overlap between the two is
-> deliberate provenance, not duplication.
+> **Plan vs. as-built.** Design-of-record for the **Drupal Docker Wrapper**.
+> [architecture.md](architecture.md) is the as-built snapshot; on conflict `architecture.md` is the
+> truth about the code and this plan the truth about intent. The overlap is deliberate provenance.
 >
-> Part of the Bioland architectural plan. The cross-project hub (System Overview,
-> Actors, Workflow Statuses, End-to-End Flows, Verification, Deferred Items) is the
-> hub, not yet linkable from this repo; glossary: [CONTEXT.md](CONTEXT.md); context map:
-> [CONTEXT-MAP.md](CONTEXT-MAP.md). This doc owns the **Drupal Docker Wrapper** (Docker / Bash /
-> Composer) work. Sibling spokes (separate repos, no cross-repo link yet): Bioland Head,
-> Drupal Module Bioland, Drupal Module SCBD Thesaurus Tags, Drupal Module SCBD Field JS.
+> Part of the Bioland architectural plan. The cross-project hub (System Overview, Actors, Workflow
+> Statuses, End-to-End Flows, Verification, Deferred Items) is not yet linkable from this repo;
+> glossary: [CONTEXT.md](CONTEXT.md); context map: [CONTEXT-MAP.md](CONTEXT-MAP.md). This doc owns
+> the **Drupal Docker Wrapper** (Docker / Bash / Composer) work. Sibling spokes (separate repos, no
+> cross-repo link yet): Bioland Head, Drupal Module Bioland, Drupal Module SCBD Thesaurus Tags,
+> Drupal Module SCBD Field JS.
 
 # Bioland: Drupal Docker Wrapper — Architectural Plan
 
 ## Context
 
-The Drupal Docker Wrapper is the CMS runtime of the Bioland system. It is a single, reusable Docker
-image (`scbd/drupal-docker-wrapper`) built on the official `drupal:11.x-php8.4` upstream image,
-layering every required contrib module and Drush at pinned exact versions, along with CLI tooling
-and a two-phase startup script. Every other Drupal-side Bioland project — `drupal-module-bioland`,
-`scbd_field`, and the module dependencies they require — runs inside a container started from this
-image.
+The Drupal Docker Wrapper is the CMS runtime of the Bioland system: one reusable image
+(`scbd/drupal-docker-wrapper`) on `drupal:11.x-php8.4`, layering every required contrib module and
+Drush at pinned exact versions, CLI tooling, and a two-phase startup script. Every other
+Drupal-side Bioland project — `drupal-module-bioland`, `scbd_field`, and their module dependencies
+— runs in a container started from this image.
 
 This project is the hub repo for the Bioland architectural plan. Its design documents (this file,
 [architecture.md](architecture.md), [prd.md](prd.md), [CONTEXT.md](CONTEXT.md)) are the
-system-of-record for the CMS Runtime bounded context. The cross-project material lives in the
-Bioland hub (a separate repo; no cross-repo link yet).
+system-of-record for the CMS Runtime bounded context. Cross-project material lives in the Bioland
+hub (a separate repo; no cross-repo link yet).
 
 > Cross-project decisions: [docs/adr/](adr/).
 
@@ -32,14 +30,13 @@ Bioland hub (a separate repo; no cross-repo link yet).
 
 ## Owned Interface (the seam)
 
-The wrapper is a deep module. Almost all of its implementation — the multi-stage build, the ~40
-pinned contrib modules, the two-phase startup, the permission hardening — is hidden from
-consumers. What other projects actually depend on is a small, stable contract:
+The wrapper is a deep module: the multi-stage build, the ~40 pinned contrib modules, the two-phase
+startup, and the permission hardening are all hidden. Consumers depend on a small, stable contract:
 
 **1. The runtime port — a Drupal 11 site that boots immediately.**
-The image starts Apache on `:80` in seconds and passes its `HEALTHCHECK` before the background
-provisioning finishes. The custom-module spokes (`bioland`, `scbd_field`) depend on a live,
-pinned Drupal core + Drush environment to run inside, not on knowing how it was assembled.
+Apache starts on `:80` in seconds and passes its `HEALTHCHECK` before background provisioning
+finishes. The custom-module spokes (`bioland`, `scbd_field`) depend on a live, pinned Drupal core +
+Drush environment, not on how it was assembled.
 
 **2. The mount contract — the load-bearing seam.**
 Exactly five paths are safe to bind-mount from EFS:
@@ -52,29 +49,26 @@ Exactly five paths are safe to bind-mount from EFS:
 | `temp` | Checkpoints, backups, scratch |
 | `php/custom.ini` | PHP runtime overrides |
 
-Mounting `vendor/`, `web/core/`, or the whole `modules/` directory is a volume mask — it hides the
-image's pinned contrib tree and defeats the reproducibility guarantee. This is the contract the dmsm
-Swarm deployment must honour for the pin to hold.
+Mounting `vendor/`, `web/core/`, or the whole `modules/` directory is a volume mask: it hides the
+image's pinned contrib tree and defeats reproducibility. The dmsm Swarm deployment must honour this
+contract for the pin to hold.
 
 **3. The custom-module overlay contract.**
-`drupal-module-bioland` and `scbd_field` are not baked into the image. They are overlaid under
+`drupal-module-bioland` and `scbd_field` are not baked into the image; they are overlaid under
 `modules/custom` at runtime. The wrapper guarantees they land in a Drupal that already has their
-contrib dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, `auto_node_translate`, etc.)
-pinned and present.
+contrib dependencies (`linkit`, `fontawesome`, `jsonapi_extras`, `auto_node_translate`, etc.) pinned
+and present.
 
 **4. The after-start guarantees.**
-On every container start, the wrapper cleans deprecated paths and hardens image-resident code
-permissions (`root:www-data`, read-only). It touches none of the five bind mounts, so `web/sites`
-permissions - `settings*.php` and `services*.yml` included - are the deploy's responsibility, not
-the image's; see [adr/0009](adr/0009-confine-after-start-to-image-code.md). Custom modules can
-assume the image-code baseline; they do not run it themselves. There is no cache rebuild in this
-list: a per-site
-`drush cache:rebuild` after a module or patch change is a deploy-process responsibility, not
-something the container does for itself. See
+On every start the wrapper cleans deprecated paths and hardens image-resident code permissions
+(`root:www-data`, read-only). It touches none of the five bind mounts, so `web/sites` permissions —
+`settings*.php` and `services*.yml` included — are the deploy's responsibility; see
+[adr/0009](adr/0009-confine-after-start-to-image-code.md). Custom modules assume that image-code
+baseline; they do not run it themselves. No cache rebuild is included: a per-site
+`drush cache:rebuild` after a module or patch change is a deploy-process responsibility. See
 [adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
-What is **not** in the interface: the build stages and the startup patch-application internals.
-Those are implementation, hidden behind the surface above.
+**Not** in the interface: the build stages and the startup patch-application internals.
 
 ---
 
@@ -112,10 +106,9 @@ flowchart TB
   head -->|reads JSON:API| wrapper
 ```
 
-The wrapper sits between the upstream `drupal:11.x-php8.4` image and the Packagist/drupal.org
-sources it builds FROM, and the consumers that depend on it at runtime: the dmsm Swarm stacks, the
-custom module overlays (from EFS), and the bioland-head Nuxt frontend that reads the Drupal
-JSON:API. Developers and GitHub Actions build and test the image; Docker Hub holds published tags.
+The wrapper sits between its upstream sources (the `drupal:11.x-php8.4` image, Packagist and
+drupal.org) and its runtime consumers (dmsm Swarm stacks, EFS custom-module overlays, the
+bioland-head Nuxt frontend reading JSON:API). Docker Hub holds published tags.
 
 ### Containers (C4 L2) — what is built in vs. overlaid at runtime
 
@@ -158,8 +151,8 @@ The image contains four kinds of content:
 | Drush 13 + CLI tooling | system path / composer global | curl, gosu, jq, patch, git, mysql client, aws cli |
 | Startup scripts + manifest | `scripts/`, `/opt/drupal/modules-versions.txt` | `entrypoint.sh`, `after-start.sh` |
 
-Five paths are **overlaid at runtime** via bind mounts from EFS (see Owned Interface §2 above). The
-hard rule: never mount over `vendor/`, `web/core/`, or `web/modules/contrib/`.
+Five paths are **overlaid at runtime** via EFS bind mounts (Owned Interface §2). The hard rule:
+never mount over `vendor/`, `web/core/`, or `web/modules/contrib/`.
 
 ### Key Components (C4 L3)
 
@@ -230,19 +223,17 @@ flowchart TB
   asf --> harden[harden_image_code\nimage-resident paths only]
 ```
 
-`lib/patches.sh` is fully implemented (`git apply` only, with an already-applied patch detected by a
-`git apply --reverse --check` dry run) and its entry point
-`apply_patches_if_present` runs at startup, before Apache starts. It is optional and best-effort: a
-missing `lib/patches.sh` is logged and skipped rather than killing the container, and a failing
-patch step does not stop Apache from serving. Build-time composer patching via
-`cweagans/composer-patches` runs independently at image build.
+`lib/patches.sh` is fully implemented (`git apply` only; an already-applied patch is detected by a
+`git apply --reverse --check` dry run) and `apply_patches_if_present` runs before Apache starts. It
+is optional and best-effort: a missing `lib/patches.sh` is logged and skipped rather than killing
+the container, and a failing patch step does not stop Apache serving. Build-time composer patching
+via `cweagans/composer-patches` runs independently at image build.
 
 ---
 
 ## Data Model
 
-There is no application database in this repo. The "data" is the dependency manifest fixed at
-build time:
+There is no application database. The "data" is the dependency manifest fixed at build time:
 
 ```mermaid
 erDiagram
@@ -259,11 +250,10 @@ erDiagram
   }
 ```
 
-`composer.lock` is the authoritative pin: every contrib module's exact version is fixed at build
-time and never rewritten afterward, because `web/modules/contrib` is never bind-mounted (see the
-mount contract in Owned Interface §2 above) — there is nothing at runtime that could drift it.
-`modules-versions.txt` is the human-readable manifest of direct dependency versions, produced by
-`composer show --direct` at build time.
+`composer.lock` is the authoritative pin: every contrib version is fixed at build time and never
+rewritten, because `web/modules/contrib` is never bind-mounted (Owned Interface §2) — nothing at
+runtime can drift it. `modules-versions.txt` is the human-readable manifest of direct dependency
+versions, from `composer show --direct` at build time.
 
 ---
 
@@ -289,10 +279,10 @@ sequenceDiagram
   After->>After: harden_image_code (every start, image-resident paths only)
 ```
 
-The fork design means the healthcheck never waits on after-start. Apache is exec'd immediately and
-serving independently of it. Both passes run every time, ungated: neither touches a bind mount, so
-there is no EFS walk to skip and no marker to keep. Nothing in the container tightens
-`settings*.php` or `services*.yml` under `web/sites` any more; see
+The healthcheck never waits on after-start: Apache is exec'd immediately and serves independently.
+Both passes run every time, ungated — neither touches a bind mount, so there is no EFS walk to skip
+and no marker to keep. Nothing in the container tightens `settings*.php` or `services*.yml` under
+`web/sites` any more; see
 [adr/0009](adr/0009-confine-after-start-to-image-code.md). There is no cache rebuild step; see
 [adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
 
@@ -350,9 +340,8 @@ flowchart LR
 ```
 
 The deployed `drupal` service runs under the dmsm Swarm multi-site stacks (defined outside this
-repo). It bind-mounts exactly the five paths above; `modules/custom` is the only part of
-`modules/` ever mounted, so `web/modules/contrib`, `web/core`, and `vendor` always come from the
-image and cannot drift.
+repo), bind-mounting exactly the five paths above. `modules/custom` is the only part of `modules/`
+ever mounted, so `web/modules/contrib`, `web/core`, and `vendor` always come from the image.
 
 ---
 
@@ -365,30 +354,29 @@ Build-time patching via `cweagans/composer-patches` is live; three guzzle/psr7 a
 temporarily suppressed for BL-695 (remove per Drupal #3599842).
 
 **Permission hardening adapter.**
-`after-start.sh` → `harden_image_code`: makes the image's own code tree read-only (`root:www-data`,
-dirs 755 / files 644, which covers `.htaccess` files inside those trees and `web/.htaccess`) across
+`after-start.sh` → `harden_image_code` makes the image's own code read-only (`root:www-data`, dirs
+755 / files 644, covering `.htaccess` files inside those trees and `web/.htaccess`) across
 `web/core`, `web/modules/contrib`, `web/themes`, `web/profiles`, `web/libraries`, `vendor`, and the
 root-level `web/*` files, then restores the execute bit on `vendor/bin` entries and their targets.
 It touches nothing under the five bind mounts. In particular **nothing in the container tightens
-`settings*.php`/`services*.yml` under `web/sites` any more** — that hardening belongs to the deploy
-that defines the mount, or to the external per-site script that already owns `.htaccess` under
-`sites/*/files`; a mount that ships `settings.php` world-readable stays world-readable. See
-[adr/0009](adr/0009-confine-after-start-to-image-code.md). Root is used only for this hardening step
-and for binding port 80. No script runs Drush; `gosu` is kept in the image so an operator can run it
-as `www-data` by hand (e.g. a per-site cache rebuild). There is no blanket `.htaccess` find over the
-whole project root any more: it walked the EFS-backed `sites/*/files` upload trees on every start
-and changed no durable permission. See
-[adr/0008](adr/0008-remove-htaccess-hardening-from-after-start.md).
+`settings*.php`/`services*.yml` under `web/sites` any more** — a mount shipping `settings.php`
+world-readable stays world-readable, and that hardening belongs to the deploy defining the mount, or
+to the external per-site script that already owns `.htaccess` under `sites/*/files`. See
+[adr/0009](adr/0009-confine-after-start-to-image-code.md). Root is used only for this step and for
+binding port 80. No script runs Drush; `gosu` is kept so an operator can run it as `www-data` by
+hand (e.g. a per-site cache rebuild). The blanket `.htaccess` find over the whole project root is
+gone: it walked the EFS-backed `sites/*/files` trees every start and changed no durable permission.
+See [adr/0008](adr/0008-remove-htaccess-hardening-from-after-start.md).
 
 **CI / release adapter.**
-GitHub Actions: `lint` (markdownlint + hadolint) gates `build-test` (docker build + smoke-test). The
-`push-images` job reads the GitHub Release tag (`github.event.release.tag_name`) for the image tag and is
-currently commented out — releases build and test but do not push to Docker Hub until it is re-enabled.
+GitHub Actions: `lint` (markdownlint + hadolint) gates `build-test` (docker build + smoke-test).
+`push-images` reads `github.event.release.tag_name` for the image tag and is currently commented
+out — releases build and test but do not push to Docker Hub until it is re-enabled.
 
 **Healthcheck.**
-`HEALTHCHECK` makes an HTTP probe on `/` with a 40-second start period. The container reports
-healthy as soon as Apache serves, independently of after-start progress. A healthy container does
-not guarantee that after-start succeeded; check `[after-start]` log lines.
+`HEALTHCHECK` probes `/` over HTTP with a 40-second start period, so the container reports healthy
+as soon as Apache serves. A healthy container does not mean after-start succeeded; check
+`[after-start]` log lines.
 
 ---
 
@@ -427,9 +415,9 @@ Recorded in [docs/adr/](adr/). Rationale lives there; not restated here.
 
 ## Workflow Transitions
 
-The wrapper owns no part of the content, comment, or translation workflow — those are the
-`drupal-module-bioland` spoke's domain. It owns one operational state machine: the after-start
-provisioning run. It has no branch — cleanup and image-code hardening both run on every start,
+The wrapper owns no part of the content, comment, or translation workflow (that is the
+`drupal-module-bioland` spoke's domain), only one operational state machine: the after-start
+provisioning run. It has no branch — cleanup and image-code hardening both run every start,
 ungated, because neither touches a bind mount; see
 [adr/0009](adr/0009-confine-after-start-to-image-code.md). There is no cache-rebuild state; see
 [adr/0007](adr/0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
@@ -448,8 +436,8 @@ stateDiagram-v2
 | `Hardening` | `Cleanup` exit | `harden_image_code`, in the foreground of the already-forked after-start run; walks only image-resident paths, runs every start |
 | `Complete` | Hardening pass done | Failed paths are counted and named in the log rather than swallowed; nothing is persisted across containers |
 
-This machine is self-contained: it touches no content state and is invisible over JSON:API. Every
-container repeats the same two steps from scratch; no state carries across containers or volumes.
+This machine is self-contained: no content state, invisible over JSON:API. Every container repeats
+the same two steps from scratch; no state carries across containers or volumes.
 
 ---
 
@@ -469,8 +457,7 @@ container repeats the same two steps from scratch; no state carries across conta
 
 ## Verification Checklist
 
-Checks scoped to this project. Items marked `[cross]` also appear in the Bioland hub's verification
-checklist.
+Scoped to this project. `[cross]` items also appear in the Bioland hub's checklist.
 
 - [ ] Apache passes its `HEALTHCHECK` within the 40-second start period on a cold `docker run`.
 - [ ] A fresh `docker run` of a published tag yields a contrib tree whose versions match

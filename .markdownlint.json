@@ -3,5 +3,6 @@
   "MD012": { "maximum": 1 },
   "MD007": { "indent": 2 },
   "MD004": { "style": "dash" },
-  "MD041": false
+  "MD041": false,
+  "MD033": { "allowed_elements": ["details", "summary"] }
 }

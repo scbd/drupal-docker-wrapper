@@ -9,24 +9,24 @@ origin: standalone
 
 # 0002. Pin contrib modules with exact versions in a dedicated build stage
 
-The wrapper image installs every contrib module and Drush at an exact pinned version, declared
-inline in a single `composer require` inside a dedicated `with-modules` build stage, and retains
-`composer.lock` in the image. The stage also writes `modules-versions.txt`, a human-inspectable
-manifest produced by `composer show --direct`.
+The wrapper installs every contrib module and Drush at an exact pinned version, declared inline in
+one `composer require` inside a dedicated `with-modules` stage, and retains `composer.lock`. The
+stage also writes `modules-versions.txt` via `composer show --direct`.
 
-We do this for reproducibility and auditability: the exact dependency surface is visible in the
-`Dockerfile` without running the image, builds are deterministic across machines and time, and no
-implicit upgrade can slip in between rebuilds. Keeping the installs in their own stage means a module
-bump invalidates only that layer's cache, not core.
+Why: the exact dependency surface is readable in the `Dockerfile` without running the image, builds
+are deterministic, and no implicit upgrade slips in between rebuilds. Isolating the installs means a
+module bump invalidates only that layer's cache, not core.
 
-## Considered Options
+<details>
+<summary>3 rejected alternatives</summary>
 
-- **Floating version constraints** (e.g. `^3.6`) - rejected: lets contrib drift between rebuilds,
-  defeating reproducibility.
-- **A separate modules manifest file required by composer** - rejected: hides the version surface
-  from a reader of the `Dockerfile` and adds a file to keep in sync for no cache benefit.
-- **Many separate `composer require` lines** - rejected: each line is its own layer and slows
-  rebuilds; one consolidated require maximizes cache reuse.
+- **Floating constraints** (e.g. `^3.6`) - lets contrib drift between rebuilds.
+- **A separate composer-required manifest file** - hides the version surface from a `Dockerfile`
+  reader and adds a file to keep in sync, for no cache benefit.
+- **Many separate `composer require` lines** - each is its own layer and slows rebuilds; one
+  consolidated require maximizes cache reuse.
+
+</details>
 
 ## Consequences
 
