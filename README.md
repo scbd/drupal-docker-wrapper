@@ -186,10 +186,12 @@ releases match — e.g. publish a release with tag `11.x.x`.
 
 ## Local development on Apple Silicon (Mac, ARM64)
 
-This image is **`linux/amd64`-only** — it does **not** build natively for `arm64`. The `Dockerfile`
-installs AWS CLI v2 from the hardcoded x86_64 archive (`awscli-exe-linux-x86_64.zip`), and production
-runs on amd64, so a native `arm64` build would ship a wrong-architecture `aws` binary that fails at
-runtime. On an Apple Silicon Mac you build and run the amd64 image under emulation.
+This image is **`linux/amd64`-only** — it does **not** build natively for `arm64`, and that is now a
+recorded decision rather than an accident: see
+[adr/0010](docs/adr/0010-drop-the-multi-platform-build-claim.md). The `Dockerfile` installs AWS CLI
+v2 from the hardcoded x86_64 archive (`awscli-exe-linux-x86_64.zip`), and production runs on amd64,
+so a native `arm64` build would ship a wrong-architecture `aws` binary that fails at runtime. On an
+Apple Silicon Mac you build and run the amd64 image under emulation.
 
 **One-time setup (Docker Desktop):**
 
@@ -321,12 +323,15 @@ chown -R www-data:www-data /var/www/.composer
 
 ### Build and push in one step (local)
 
+`linux/amd64` only — see [adr/0010](docs/adr/0010-drop-the-multi-platform-build-claim.md). Passing
+`linux/arm64` here produces an image whose bundled `aws` binary is the wrong architecture.
+
 ```sh
 # for dev and stg
-docker build --platform linux/amd64,linux/arm64 -t scbd/drupal-docker-wrapper:${env}-${VERSION_TAG} . --push
+docker build --platform linux/amd64 -t scbd/drupal-docker-wrapper:${env}-${VERSION_TAG} . --push
 
 #prod
-docker build --platform linux/amd64,linux/arm64 \
+docker build --platform linux/amd64 \
   -t scbd/drupal-docker-wrapper:${VERSION_TAG} \
   -t scbd/drupal-docker-wrapper:latest . --push
 ```
