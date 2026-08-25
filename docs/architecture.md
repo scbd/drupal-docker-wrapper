@@ -163,6 +163,10 @@ logged and skipped rather than treated as fatal, and a failing patch step logs a
 than stopping the container serving. Build-time patching via `cweagans/composer-patches` runs
 independently and is unaffected either way.
 
+`after-start.sh` no longer has an `ensure_runtime_ownership` step. That step made the image's own
+code `www-data`-writable; it was removed for security, and `harden_image_code` now asserts the
+opposite.
+
 ## 5. Key Flows (sequence diagrams)
 
 ### 5.1 Container startup (two-phase)
@@ -188,7 +192,9 @@ sequenceDiagram
 The fork means the healthcheck never waits on after-start. Apache execs as soon as entrypoint.sh
 reaches it; after-start begins once `http://127.0.0.1/` answers (any HTTP status counts, including a
 301/403/500 mid-install), polled every `DRUPAL_AFTER_START_READY_INTERVAL` seconds (default 2) for
-up to `DRUPAL_AFTER_START_READY_TIMEOUT` seconds (default 120) before running anyway. Both passes
+up to `DRUPAL_AFTER_START_READY_TIMEOUT` seconds (default 120) before running anyway. The probe URL
+is overridable with `DRUPAL_AFTER_START_READY_URL`; each of the three is validated, with a logged
+fallback to the default on a bad value. Both passes
 run every start, ungated: neither touches a bind mount, so there is nothing expensive to skip and no
 marker to keep. Nothing in the container tightens `settings*.php` or `services*.yml` under
 `web/sites` any more - that is the deploy's responsibility; see

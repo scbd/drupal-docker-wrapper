@@ -88,78 +88,43 @@ onto it without being part of it.
 
 ## Implementation Decisions
 
-- **Multi-stage build, module installs isolated.** `base-core` (core, system packages,
-  GD-with-AVIF, composer config), `with-modules` (composer-patches plugin, then one consolidated
-  `composer require` of all pinned modules plus Drush, then `modules-versions.txt` via
-  `composer show --direct`), `final` (production php.ini, labels, docroot symlink, scripts,
-  healthcheck). Isolating module installs keeps a module bump from invalidating the core layer's
-  cache. See `docs/adr/0002-...`.
-- **Exact pins inline in the Dockerfile.** Every contrib module and Drush carry an exact version in
-  the single `composer require`. `composer.lock` is retained as the record of the build-time
-  resolved graph; nothing reads it at runtime.
-- **The composer-patches plugin is required before patched packages**, so patches can apply during
-  the module install.
-- **Two-phase startup, gated on readiness not a fixed delay.** `entrypoint.sh` runs as root, forks a
-  job polling `http://127.0.0.1/` until the web server answers - any HTTP status counts, including
-  301/403/500 - then runs `after-start.sh`, and exec-chains the upstream Drupal entrypoint so Apache
-  starts immediately. Timeout, interval, and probe URL are overridable via
-  `DRUPAL_AFTER_START_READY_TIMEOUT` (default 120s), `DRUPAL_AFTER_START_READY_INTERVAL` (default
-  2s), and `DRUPAL_AFTER_START_READY_URL`, each validated with a logged fallback. See
-  `docs/adr/0003-...`.
-- **No gating, because nothing expensive is left.** After-start touches no bind mount:
-  deprecated-path cleanup and `harden_image_code` act only on image-resident local-disk paths, so
-  they are cheap to repeat and run unconditionally. No completion marker, marker directory, or
-  stale-marker purge. See `docs/adr/0009-...`.
-- **No cache rebuild in the container.** The old `drush cache:rebuild` ran with no site URI (so it
-  bootstrapped only the default site) and was gated on `web/sites/default/settings.php`, which a
-  multisite install may not have. Under multisite it was a no-op or rebuilt one arbitrary site, so
-  it was removed. A per-site rebuild is still required after a module or patch change; it is now a
-  deploy responsibility, run through the mounted drush aliases (`@lk`, `@be`, ...). See
-  `docs/adr/0007-...`.
-- **No runtime composer invocation.** The module-repair step comparing installed contrib against
-  `composer.lock` was removed, with its `DRUPAL_SKIP_MODULE_REPAIR` and
-  `DRUPAL_AFTER_START_FORCE_MODULE_REPAIR` variables. Only `modules/custom` is bind-mounted, so
-  `web/modules/contrib`, `web/core`, and `vendor` cannot drift underneath it.
-- **Permission hardening confined to image code.** `web/core`, `web/modules/contrib`, `web/themes`,
-  `web/profiles`, `web/libraries`, `vendor`, and the root-level `web/*` files become `root:www-data`
-  read-only (dirs 755, files 644, covering the `.htaccess` files inside them and `web/.htaccess`),
-  with the execute bit restored on `vendor/bin` entries and their targets. Nothing under the five
-  bind mounts is touched. In particular **nothing in the container tightens `settings*.php` or
-  `services*.yml` any more** - a mount shipping `settings.php` world-readable stays world-readable,
-  and that hardening must happen where the mount is defined, or in the external per-site script that
-  already owns `.htaccess` under `sites/*/files`. `gosu` is preserved so an operator can run drush as
-  www-data by hand (e.g. `gosu www-data vendor/bin/drush @lk cache:rebuild`); no script invokes it.
-  The previous `ensure_runtime_ownership` (which made code www-data-writable) was removed for
-  security, and the blanket `.htaccess` pass across the project root is gone - it walked the
-  EFS-backed `sites/*/files` trees every start and changed no durable permission. See
-  `docs/adr/0008-...` and `docs/adr/0009-...`.
-- **Startup patch application is active, and optional.** `lib/patches.sh` (`git apply -p1` only, no
-  marker files - an already-applied patch is detected with a `git apply --reverse --check` dry run;
-  ignores `patches/old/`) ships in the image and runs from `entrypoint.sh` before Apache starts. It
-  degrades safely both ways: a missing `lib/patches.sh` is logged and skipped rather than killing
-  PID 1, and a failing patch step does not stop Apache serving. Build-time composer patching (via
-  `cweagans/composer-patches`) stays the path for patches published against a contrib release; this
-  one exists for patches applying against the bind-mounted `modules/custom` tree.
-- **Healthcheck independent of provisioning.** An HTTP probe on `/` with a 40s start period, so the
-  container reports healthy as soon as Apache serves, regardless of after-start progress.
-- **CI on GitHub Actions.** `lint` (markdownlint + hadolint) gates `build-test` (docker build +
-  smoke-test). `push-images` derives the tag from `github.event.release.tag_name` and is currently
-  commented out. Build context exclusions live in `.dockerignore`.
-- **Versioning tracks Drupal core.** The image version (in `package.json` and the git tag) is the
-  core version, with a `-vN` suffix only for a later wrapper iteration on the same core.
-- **Temporary advisory ignores (BL-695).** Three guzzle/psr7 advisories are suppressed in
-  `base-core` so the Critical Drupal 11.3.12 core fix can build before patched releases land in
-  core's ranges; documented inline to be removed (Drupal #3599842).
+Each decision below is the requirement it satisfies, not the mechanism. `architecture.md` is the
+as-built record; the ADRs carry the rationale.
+
+- **Pin contrib at build time in a dedicated stage.** Reproducibility and cache isolation, over
+  floating constraints. ADR 0002.
+- **Two-phase startup, handed off on a readiness poll rather than a fixed delay.** Apache must serve
+  before provisioning finishes. ADR 0003.
+- **After-start touches no bind mount, and nothing is gated.** What remains is cheap local-disk work
+  on image code, so a completion marker would only be a second source of truth. ADR 0009.
+- **No cache rebuild and no composer invocation in the container.** The rebuild never covered more
+  than one site on multisite; repair had nothing to repair once contrib stopped being mountable.
+  A per-site rebuild after a code change is now a deploy responsibility. ADRs 0005, 0007.
+- **Hardening is confined to image code.** The consequence is deliberate and sharp: **nothing in the
+  container tightens `settings*.php` or `services*.yml` any more**, so a mount shipping
+  `settings.php` world-readable stays world-readable. That belongs to the deploy defining the mount,
+  or to the external per-site script that owns `.htaccess` under `sites/*/files`. `gosu` stays so an
+  operator can run drush as `www-data` by hand; no script invokes it. ADRs 0008, 0009.
+- **Startup patch application is active but never blocking.** A missing patch engine or a failing
+  patch logs and continues rather than stopping Apache. Build-time composer patching remains the
+  path for patches published against a contrib release.
+- **Healthcheck independent of provisioning**, so orchestration sees the container up as soon as
+  Apache serves.
+- **CI lints before it builds, and publishing is off.** The `push-images` job is commented out;
+  tagged releases build and test but do not push.
+- **Versioning tracks Drupal core**, with a `-vN` suffix for a wrapper-only iteration.
+- **Temporary advisory ignores (BL-695).** Three guzzle/psr7 advisories are suppressed so the
+  Critical Drupal 11.3.12 core fix can build before patched releases land in core's ranges. To be
+  removed per Drupal #3599842; left in, they hide real future advisories on those packages.
 
 ## Testing Decisions
 
 - **Test the built image's external behaviour, not script internals.** `ci/smoke-test.sh` runs the
-  real image and asserts observable facts: PHP runs, Drush reports a version, and key contrib
-  directories (`jsonapi_extras`, `search_api`) exist. That is the artifact a consumer pulls.
-- **Lint the build and docs.** `ci/lint.sh` runs markdownlint and hadolint, with a hadolint fallback
-  (local binary or docker image) so it works in restricted CI containers.
-- **Local pipeline parity.** `ci/test-ci-locally.sh` runs the same lint -> build -> smoke-test
-  sequence locally.
+  real image and asserts observable facts - PHP runs, Drush reports a version, key contrib
+  directories exist - because that is the artifact a consumer pulls.
+- **Lint the build and the docs.** `ci/lint.sh`, with a hadolint fallback so it works in restricted
+  CI containers.
+- **Local pipeline parity**: the same lint -> build -> smoke-test sequence runs locally.
 - **Prior art.** Copy the smoke test for any new image-level assertion: start a container, exec a
   check, assert on its output or filesystem. Keep checks observable and version agnostic.
 
