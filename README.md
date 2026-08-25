@@ -85,10 +85,6 @@ per site through the mounted drush aliases (`@lk`, `@be`, …; see [Volume mount
 | `DRUPAL_AFTER_START_READY_INTERVAL` | `2` | Seconds between readiness probes. |
 | `DRUPAL_AFTER_START_READY_URL` | `http://127.0.0.1/` | URL the readiness probe polls. |
 
-> **Note:** The after-start script **is active**; it is forked by `entrypoint.sh` and these variables take effect.
-> Deprecated-path cleanup and image-code hardening run on every start, ungated. The entrypoint
-> *patch-application* step (Phase 1) is also active and runs on every start (idempotent).
-
 Example usage:
 
 ```sh
@@ -98,12 +94,6 @@ docker run -d --name drupal -p 8080:80 \
   -v drupal-sites:/opt/drupal/web/sites \
   scbd/drupal-docker-wrapper:VERSION_TAG
 ```
-
-This approach ensures:
-
-- Fast container startup (Apache available immediately)
-- Heavy permission-hardening work doesn't block healthchecks
-- Privilege separation (permission hardening needs root; drush can be run as www-data via gosu by hand)
 
 ### Script Structure
 
@@ -341,16 +331,14 @@ docker build --platform linux/amd64,linux/arm64 \
   -t scbd/drupal-docker-wrapper:latest . --push
 ```
 
-## License
-
-This project: MIT (container build scripts). Drupal & contributed modules: GPL-2.0-or-later.
-
----
-
-Refer to the `Dockerfile` for authoritative module version declarations.
+### Push to a host over SSH, without a registry
 
 ```sh
-# Push a locally built staging image to a host over SSH, without a registry.
 sudo docker save scbd/drupal-docker-wrapper:stg-11.4.5-v2 | gzip \
   | ssh <user>@<staging-host> "gunzip | sudo docker load"
 ```
+
+## License
+
+This project: MIT (container build scripts). Drupal & contributed modules: GPL-2.0-or-later.
+The `Dockerfile` is authoritative for module version declarations.
