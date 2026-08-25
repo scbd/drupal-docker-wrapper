@@ -96,8 +96,14 @@ harden_image_code() {
       chown -R root:www-data "${code_path}" || failed=1
       # Directories: 755 (rwxr-xr-x) - need execute for traversal
       find "${code_path}" -type d -exec chmod 755 {} + || failed=1
-      # Files: 644 (rw-r--r--) - no execute bit
-      find "${code_path}" -type f -exec chmod 644 {} + || failed=1
+      # Files: 644, EXCEPT ones the build already marked executable, which become
+      # 755. Blanket 644 broke every CLI entry point in vendor/: composer writes
+      # vendor/bin/* as proxy shell scripts here, not symlinks, so restoring the
+      # bit on vendor/bin alone left the real target (vendor/drush/drush/drush and
+      # its peers) at 644 and `drush` died with "Permission denied". Keying off the
+      # existing bit needs no knowledge of composer's layout and cannot go stale.
+      find "${code_path}" -type f ! -perm -u+x -exec chmod 644 {} + || failed=1
+      find "${code_path}" -type f -perm -u+x -exec chmod 755 {} + || failed=1
       if (( failed )); then
         log "WARNING: hardening ${code_path} reported errors; continuing."
         failed_paths=$(( failed_paths + 1 ))
@@ -105,25 +111,10 @@ harden_image_code() {
     fi
   done
 
-  # The files pass above stripped the execute bit from every real CLI target
-  # under vendor/, so restore it on vendor/bin and on whatever each entry points
-  # at. Composer writes these as symlinks on Linux today, but it can emit proxy
-  # files instead; deriving the target covers both, where a hard-coded tool list
-  # (drush, phpunit, ...) goes stale the moment a dependency is added.
-  if [[ -d "${project_root}/vendor/bin" ]]; then
-    log "Restoring execute permissions on vendor/bin..."
-    local entry target
-    for entry in "${project_root}/vendor/bin"/*; do
-      [[ -e "${entry}" ]] || continue
-      chmod 755 "${entry}" || log "WARNING: could not chmod ${entry}; continuing."
-      if [[ -L "${entry}" ]]; then
-        target="$(readlink -f "${entry}" 2>/dev/null)" || continue
-        if [[ -f "${target}" ]]; then
-          chmod 755 "${target}" || log "WARNING: could not chmod ${target}; continuing."
-        fi
-      fi
-    done
-  fi
+  # No vendor/bin special case any more. The executable-preserving chmod above
+  # covers every CLI entry point and the binaries they exec, whether composer
+  # emitted symlinks or proxy scripts, so a separate pass over vendor/bin could
+  # only ever re-do a subset of it.
 
   # Root-level web files (index.php, update.php, etc.)
   log "Securing root-level web files (root:www-data, 644)..."
