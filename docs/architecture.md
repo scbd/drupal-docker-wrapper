@@ -338,6 +338,9 @@ Recorded in `docs/adr/` (rationale lives there, not restated here):
   and test but do not publish until it is re-enabled with Docker Hub credentials.
 - **No scheduled rebuild yet.** The README calls for a weekly rebuild to pick up upstream
   base-image security patches; that automation is not in place.
+- **No end-to-end test crossing the mount seam.** Nothing verifies that the custom-module overlay
+  plus the contrib pin produce a working Drupal site end to end. The smoke test checks PHP, Drush,
+  and key module directories, not a live page render.
 - **No cache rebuild after a deploy.** A deployment shipping new module or patch code must run a
   per-site `drush cache:rebuild` through the mounted drush aliases as a separate step. Nothing in
   this image detects or enforces that; a deploy that skips it can serve from a stale service
@@ -348,3 +351,25 @@ Recorded in `docs/adr/` (rationale lives there, not restated here):
   `.htaccess` content still blocks PHP execution while its mode and owner are unmanaged here. Only
   the deploy defining the mount, or an external operator-owned per-site script, can harden them. See
   `docs/adr/0008-...` and `docs/adr/0009-...`.
+
+## 12. Verification Checklist
+
+- [ ] Apache passes its `HEALTHCHECK` within the 40-second start period on a cold `docker run`.
+- [ ] A fresh `docker run` of a published tag yields a contrib tree whose versions match
+      `modules-versions.txt` and the inline `Dockerfile` pins — 0 drift.
+- [ ] After-start leaves the five bind mounts untouched: no ownership or mode change under
+      `web/sites`, `web/modules/custom`, `drush`, `temp`, or `custom.ini`; see
+      [adr/0009](adr/0009-confine-after-start-to-image-code.md).
+- [ ] The web user (`www-data`) cannot write to `web/core/`, `web/modules/contrib/`, `vendor/`, or
+      the `.htaccess` files inside them, after hardening completes.
+- [ ] `vendor/bin` entries (and their symlink targets) are still executable after hardening.
+- [ ] A path that fails to harden is named in the `[after-start]` log with a failure count, and the
+      container keeps serving.
+- [ ] Build context contains no `.env*` or archived patch files (`.dockerignore` enforcement).
+- [ ] CI fails the build when a key module directory (`jsonapi_extras`, `search_api`) is missing or
+      PHP / Drush are broken (smoke test).
+- [ ] The dmsm Swarm mount contract binds only `modules/custom` (never the whole `modules/` tree),
+      so `web/modules/contrib` always comes from the image with no volume-masked drift — a standing
+      regression check, not a one-time migration.
+- [ ] Custom modules (`bioland`, `scbd_field`) overlaid at runtime find their contrib dependencies
+      (`linkit`, `fontawesome`, `jsonapi_extras`, etc.) pinned and present.

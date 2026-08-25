@@ -1,8 +1,8 @@
 # Bioland: Context Map
 
 The bounded-context index for the Bioland architectural plan. Each of the five repositories is one
-bounded context with its own ubiquitous language. This file maps contexts to spokes, names the
-relationships, and lists the terms *shared* or *translated* across a boundary.
+bounded context with its own ubiquitous language. This file maps each context to its design doc,
+names the relationships, and lists the terms *shared* or *translated* across a boundary.
 
 Per-context glossaries: this repo's [CONTEXT.md](CONTEXT.md) is the **CMS Runtime** glossary. Each
 sibling repo keeps its own `docs/CONTEXT.md` (referenced as prose below, not linked, since the code
@@ -10,9 +10,9 @@ lives in another repo).
 
 ## Contexts
 
-| Context | Spoke | Repo (`Code:`) | Ubiquitous language (sample) |
+| Context | Design doc | Repo (`Code:`) | Ubiquitous language (sample) |
 | ------- | ----- | -------------- | ---------------------------- |
-| **CMS Runtime** | [drupal-docker-wrapper](drupal-docker-wrapper.md) | `drupal-docker-wrapper` (this repo) | wrapper image, upstream image, build stage, contrib / custom module, pinned version, two-phase startup, after-start, image-code hardening, mount contract |
+| **CMS Runtime** | [architecture.md](architecture.md) | `drupal-docker-wrapper` (this repo) | wrapper image, upstream image, build stage, contrib / custom module, pinned version, two-phase startup, after-start, image-code hardening, mount contract |
 | **Site Behaviour** | drupal-module-bioland | `Code: drupal-module-bioland` (branch `latest`) | content, tags, additional fields, field visibility, home widgets, mega menu, country-map defaults, `is_biosafety_land` |
 | **Thesaurus Tagging Field** | drupal-module-scbd-thesaurus-tags | `Code: drupal-module-scbd-thesaurus-tags` (machine name `scbd_field`) | `scbd_field_thesaurus` field type, thesaurus widget, domain, **term key**, `value` / `value2`, mount markup |
 | **Tag Picker Widget** | drupal-module-scbd-field-js | `Code: drupal-module-scbd-field-js` | tag picker, mount, hidden input, **domain**, **term key**, `singleValueDomains`, auto-add |
@@ -51,7 +51,7 @@ flowchart TB
 | ------------------- | --------------------- | ------- | ------------------ |
 | CMS Runtime | Site Behaviour, Thesaurus Field | **Host / Conformist** | The custom modules run inside the runtime and accept its Drupal + mount contract as-is; they are overlaid under `modules/custom` per the runtime's mount rules. |
 | Thesaurus Field | Site Behaviour | **Customer / Supplier** | Site Behaviour detects `scbd_field_thesaurus` fields to mount "additional fields"; it depends on the field type's existence and shape. |
-| Thesaurus Field | Tag Picker Widget | **Shared Kernel / Partnership** | The DOM markup + hidden-input contract and the **term key** vocabulary are shared; the two must change together. This is the tightest coupling in the system and has no end-to-end test crossing it (hub deferred register). |
+| Thesaurus Field | Tag Picker Widget | **Shared Kernel / Partnership** | The DOM markup + hidden-input contract and the **term key** vocabulary are shared; the two must change together. This is the tightest coupling in the system and has no end-to-end test crossing it (see `architecture.md` §11). |
 | Site Behaviour | Headless Presentation | **Customer / Supplier (Published Language)** | The published language is the **JSON:API resources + `drupalSettings.bioland` config**. The head conforms to whatever Drupal exposes; it never writes content state, only comments. |
 | DMSM (external) | Site Behaviour, Headless | **Conformist** | Both read `config/{env}/{multiSiteCode}/{siteCode}` and accept DMSM's shape; neither wraps it in an anti-corruption layer today. |
 | api.cbd.int (external) | Tag Picker Widget | **Conformist** | The widget consumes the thesaurus REST + Solr term shapes directly. |
@@ -77,7 +77,6 @@ flowchart TB
 ## Promotion / maintenance
 
 This map exists because Bioland genuinely crosses bounded contexts (five repos, distinct languages,
-real translation seams). Keep it in step with the spokes: when a seam changes, update its
-relationship row, the shared-terms list here, and the affected spoke's *Owned interface* section. A
-new shared or colliding term across contexts is the trigger to add a row (per the
-`docs-context-map` skill).
+real translation seams). Keep it in step with the code: when a seam changes, update its relationship
+row and the shared-terms list here, plus the owning context's design doc. A new shared or colliding
+term across contexts is the trigger to add a row (per the `docs-context-map` skill).
