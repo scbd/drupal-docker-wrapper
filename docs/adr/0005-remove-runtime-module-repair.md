@@ -9,6 +9,10 @@ origin: standalone
 
 # 0005. Remove runtime module repair and the integrity hashes it depended on
 
+> **Amended 2026-08-24.** The "Drush cache rebuild" named below as remaining work no longer exists;
+> it was removed as broken on multisite. See
+> [adr/0007](0007-remove-broken-multisite-cache-rebuild-from-after-start.md).
+
 `after-start.sh` no longer repairs contrib modules against `composer.lock`. The deployed dmsm Swarm
 stack bind-mounts exactly five paths per site:
 

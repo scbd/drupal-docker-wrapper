@@ -50,42 +50,43 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 9. As a platform engineer, I want the web server unable to write to code directories, so that a
    compromised PHP process cannot modify modules, core, or `.htaccess` files.
 10. As a platform engineer, I want only `sites/*/files` writable at runtime, so that uploads work
-    while everything else stays read-only.
-11. As a platform engineer, I want composer and drush to run as www-data, not root, so that
-    provisioning follows least privilege.
+    while everything else stays read-only - delivered by the deploy that defines the `sites` mount,
+    not by the container, which sets no permission under `web/sites` at all. See
+    [adr/0009](adr/0009-confine-after-start-to-image-code.md).
+11. As a platform engineer, I want an operator-invoked way to run composer and drush as www-data
+    rather than root, so that manual provisioning follows least privilege - `gosu` is retained in
+    the image for exactly that, and no script in the image runs either command itself.
 12. As a platform engineer deploying under Swarm, I want the bind-mount contract documented exactly
     (only `custom.ini`, `modules/custom`, `sites`, `drush`, and `temp` are mounted per site), so
     that a stack definition never widens the mount to the whole `modules` tree and puts the mount
     in competition with the image's own pinned `web/core`, `web/modules/contrib`, and `vendor`.
-13. As a platform engineer, I want the expensive `sites/` permission pass to run once per image
-    version per mounted volume, so that an ordinary container restart or scale-out does not repeat
-    the EFS-wide walk needlessly.
-14. As a platform engineer, I want an image upgrade to re-run the volume-backed permission work, so
-    that a volume carrying an older version's marker gets re-hardened under the new image's
-    contents.
-15. As a CI maintainer, I want the image built and smoke-tested on every change, so that a broken
+13. As a platform engineer, I want after-start to touch no bind mount at all, so that container
+    start does no recursive I/O over EFS - accepting that `web/sites` permissions become the
+    responsibility of the deploy that defines the mount. See
+    [adr/0009](adr/0009-confine-after-start-to-image-code.md).
+14. As a CI maintainer, I want the image built and smoke-tested on every change, so that a broken
     build or a missing key module is caught before release.
-16. As a CI maintainer, I want markdown and Dockerfile linting in the pipeline, so that the docs and
+15. As a CI maintainer, I want markdown and Dockerfile linting in the pipeline, so that the docs and
     the build file stay clean.
-17. As a release manager, I want the published Docker tag derived from the git tag, so that the
+16. As a release manager, I want the published Docker tag derived from the git tag, so that the
     image version always matches the release.
-18. As a release manager, I want a versioning scheme that ties the image to the Drupal core it
+17. As a release manager, I want a versioning scheme that ties the image to the Drupal core it
     ships, with a `-vN` suffix for wrapper-only iterations, so that consumers can tell a core bump
     from a module or script change.
-19. As a security reviewer, I want `.env*` and archived patches excluded from the build context, so
+18. As a security reviewer, I want `.env*` and archived patches excluded from the build context, so
     that secrets and dead patches never enter the image.
-20. As a security reviewer, I want a healthcheck that reports container health independently of
+19. As a security reviewer, I want a healthcheck that reports container health independently of
     provisioning, so that orchestration sees the container as up as soon as Apache serves.
-21. As a maintainer, I want a way to apply Drupal patches, so that I can carry fixes that are not yet
+20. As a maintainer, I want a way to apply Drupal patches, so that I can carry fixes that are not yet
     in a contrib release: composer patching at build time for contrib, and an optional startup patch
     step for the bind-mounted `modules/custom` tree that never blocks Apache if it fails.
-22. As a maintainer, I want to suppress specific security advisories temporarily with an explicit,
+21. As a maintainer, I want to suppress specific security advisories temporarily with an explicit,
     documented reason, so that a Critical core fix can build before downstream packages ship their
     own patched releases.
-23. As an operator, I want troubleshooting guidance for common failure modes (the readiness probe
+22. As an operator, I want troubleshooting guidance for common failure modes (the readiness probe
     timing out before Apache answers, missing drush, after-start not running), so that I can
     diagnose without reading the scripts.
-24. As a consumer building a derived image, I want documented composer cache ownership steps, so
+23. As a consumer building a derived image, I want documented composer cache ownership steps, so
     that composer works when I change the USER or run composer in my own layer.
 
 ## Implementation Decisions
@@ -141,8 +142,9 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
   also no blanket `.htaccess` pass across the project root any more: it walked the EFS-backed
   `sites/*/files` upload trees on every start and changed no durable permission. See
   `docs/adr/0008-...` and `docs/adr/0009-...`.
-- **Startup patch application is active, and optional.** `lib/patches.sh` (multiple `patch`
-  strategies, applied markers, ignores `patches/old/`) ships in the image and is invoked from
+- **Startup patch application is active, and optional.** `lib/patches.sh` (`git apply -p1` only, no
+  marker files - an already-applied patch is detected with a `git apply --reverse --check` dry run;
+  ignores `patches/old/`) ships in the image and is invoked from
   `entrypoint.sh` before Apache starts. It degrades safely on either failure mode: a missing
   `lib/patches.sh` is logged and skipped rather than killing PID 1, and a failing patch step is
   logged and does not stop Apache from serving. Build-time composer patching (via
@@ -157,7 +159,7 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
 - **Versioning tracks Drupal core.** The image version (in `package.json` and the git tag) is the
   core version, with a `-vN` suffix only for a later wrapper iteration on the same core.
 - **Temporary advisory ignores (BL-695).** Three guzzle/psr7 advisories are suppressed in
-  `base-core` so the Critical Drupal 11.4.1 core fix can build before patched releases land in
+  `base-core` so the Critical Drupal 11.3.12 core fix can build before patched releases land in
   core's ranges; documented inline to be removed (Drupal #3599842).
 
 ## Testing Decisions
@@ -180,15 +182,15 @@ modules and the bioland-head Nuxt frontend layer onto it without being part of i
   blocking install could take minutes).
 - A fresh `docker run` of a published tag yields an installed contrib tree whose versions match
   `modules-versions.txt` and the inline `Dockerfile` pins (0 drift).
-- The `sites/` permission pass runs exactly once per image version per mounted volume (the marker
-  is present on the volume after the first run; a later container on the same volume logs "already
-  done on this volume" and skips it). Image-resident code hardening still runs on every container
-  start.
+- After-start performs 0 filesystem operations under any of the five bind mounts
+  (`php/custom.ini`, `web/modules/custom`, `web/sites`, `drush`, `temp`), so container start does no
+  recursive I/O over EFS. Image-resident code hardening runs on every container start.
 - CI fails the build when a key module directory is missing or PHP/Drush are broken (smoke test
   catches it before any publish).
-- 0 occurrences of the web user being able to write to `web/core`, `web/modules`, `vendor`, or the
-  `.htaccess` files inside them, after hardening completes. (`sites/*/files` stays writable by the
-  web user by design, for uploads; that includes its `.htaccess`.)
+- 0 occurrences of the web user being able to write to `web/core`, `web/modules/contrib`, `vendor`,
+  or the `.htaccess` files inside them, after hardening completes. `web/modules/custom` is
+  deliberately excluded - it is a bind mount, so it is deploy-owned. Keeping `sites/*/files`
+  writable for uploads is likewise the deploy's guarantee, not the image's.
 - Build context contains no `.env*` or archived patch files (verified by `.dockerignore`).
 
 ## Out of Scope

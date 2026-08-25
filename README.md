@@ -41,12 +41,13 @@ The `entrypoint.sh` script runs immediately at container start:
 ### Phase 2: After-Start (once the web server answers)
 
 The `entrypoint.sh` fork polls the local web server (`DRUPAL_AFTER_START_READY_URL`, default `http://127.0.0.1/`)
-until it answers with any HTTP status, or the timeout elapses, then runs `after-start.sh` in the background:
+until it answers with any HTTP status, or the timeout elapses, then runs `after-start.sh`:
 
 1. **Cleans up deprecated paths** (e.g. a scaffolded `web/robots.txt`). This is defense in depth: the build already
    excludes `robots.txt` from drupal-scaffold and deletes the upstream image's copy, so this step is normally a no-op.
    Runs on every start.
-2. **Hardens image-resident code permissions** (`harden_image_code`, in the background, every start): `web/core`,
+2. **Hardens image-resident code permissions** (`harden_image_code`, in the foreground of the
+   already-forked after-start run, every start): `web/core`,
    `web/modules/contrib`, `web/themes`, `web/profiles`, `web/libraries`, `vendor` become `root:www-data` 755/644
    (the execute bit is then restored on `vendor/bin` entries and their targets), and root-level `web/` files
    (e.g. `index.php`, `web/.htaccess`) get the same 644 `root:www-data` treatment. These paths ship inside the
@@ -247,12 +248,15 @@ docker exec drupal head -50 /opt/drupal/modules-versions.txt
 
 ### Drush site install example
 
+Local smoke tests only — never point this at a shared environment, and never leave the placeholder
+admin password in place.
+
 ```sh
 docker exec -it drupal bash -lc "vendor/bin/drush si -y standard \
   --db-url='mysql://DB_USER:DB_PASS@DB_HOST:3306/DB_NAME' \
   --site-name='My Site' \
   --account-name=admin \
-  --account-pass=admin"
+  --account-pass='CHANGE_ME'"
 ```
 
 ## Upgrading a module version
@@ -346,7 +350,7 @@ This project: MIT (container build scripts). Drupal & contributed modules: GPL-2
 Refer to the `Dockerfile` for authoritative module version declarations.
 
 ```sh
-# Personal note: push a locally built staging image over SSH without a registry.
+# Push a locally built staging image to a host over SSH, without a registry.
 sudo docker save scbd/drupal-docker-wrapper:stg-11.4.5-v2 | gzip \
-  | ssh ubuntu@us2.staging.infra.cbd.int "gunzip | sudo docker load"
+  | ssh <user>@<staging-host> "gunzip | sudo docker load"
 ```

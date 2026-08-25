@@ -147,13 +147,13 @@ flowchart TB
   ep[entrypoint.sh<br/>root, thin]
   asf[after-start.sh<br/>background, after HTTP readiness poll]
   common[lib/common.sh<br/>log, find_project_root,<br/>read_wrapper_version]
-  patches[lib/patches.sh<br/>apply_patches_if_present<br/>optional, multi-strategy patch]
+  patches[lib/patches.sh<br/>apply_patches_if_present<br/>optional, git apply only]
 
   ep -->|sources| common
   ep -.->|sources if present| patches
   ep -.->|calls apply_patches_if_present<br/>if loaded| patches
   ep -->|forks| asf
-  ep -->|exec| upstream[upstream docker-entrypoint -> apache2-foreground]
+  ep -->|exec| upstream[upstream docker-entrypoint → apache2-foreground]
   asf -->|sources| common
   asf --> cleanup[cleanup_deprecated_paths<br/>defense-in-depth backstop]
   asf --> harden[harden_image_code<br/>image-resident paths only]

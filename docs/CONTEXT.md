@@ -1,7 +1,8 @@
 # Drupal Docker Wrapper
 
 The ubiquitous language of this repository: a reusable Drupal 11 base Docker image that pins
-contrib modules at build time and re-asserts that pinning at container startup. Build-time assembly
+contrib modules at build time and keeps that pin intact through a mount contract that never
+bind-mounts contrib at runtime. Build-time assembly
 and runtime provisioning are two phases of one model, so they share this single glossary.
 
 ## Language
@@ -125,13 +126,15 @@ operator commands run as www-data (via gosu, invoked by hand). Code is owned rea
 _Avoid_: drop privileges, sandboxing.
 
 **Patch application**:
-The mechanism for applying Drupal patches at container start (`scripts/lib/patches.sh`), trying
-increasingly permissive `patch` strategies and marking each applied patch. It is optional, not
+The mechanism for applying Drupal patches at container start (`scripts/lib/patches.sh`), using
+`git apply -p1` and nothing else. There are no marker files: a patch that is already applied is
+detected by a `git apply --reverse --check` dry run and skipped. It is optional, not
 disabled: `entrypoint.sh` calls `apply_patches_if_present` whenever `lib/patches.sh` is present in
 the image, and logs and continues if the patch engine or a patch step is missing or fails, so a
 missing patch layer never stops the container from serving. Composer-level patching via
 `cweagans/composer-patches` remains enabled at build time.
-_Avoid_: hotfix, runtime patch (be specific: startup patch application vs composer patching).
+_Avoid_: hotfix, runtime patch (be specific: startup patch application vs composer patching);
+`patch(1)` fallback, applied markers, fuzz or multi-strategy application (none of these exist).
 
 **Mount contract**:
 The exact five paths the deployed Swarm stack bind-mounts per site: `php/custom.ini`,
@@ -148,7 +151,7 @@ _Avoid_: describing this as a current or future risk; it is structurally impossi
 
 **Wrapper version**:
 The image's own version, in `package.json` and the release git tag, which tracks the Drupal core
-version it ships. A bare core version (e.g. `11.4.5`) for a core bump; a `-vN` suffix (the current
-version is `11.4.5-v2`) for a later wrapper iteration on the same core (a module bump, script
-change, or dependency update).
+version it ships. A bare core version (e.g. `11.4.5`) for a core bump; a `-vN` suffix for a later
+wrapper iteration on the same core (a module bump, script change, or dependency update). The
+authoritative current value is the `version` field in `package.json`.
 _Avoid_: image version, release number (be specific: this tracks core, with a wrapper suffix).

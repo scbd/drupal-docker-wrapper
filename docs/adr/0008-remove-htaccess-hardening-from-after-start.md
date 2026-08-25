@@ -9,6 +9,10 @@ origin: standalone
 
 # 0008. Remove the blanket .htaccess hardening pass from after-start
 
+> **Amended 2026-08-24.** The `ensure_sites_files_permissions` behaviour described below in the
+> present tense has since been removed entirely, along with every other after-start pass over a bind
+> mount. See [adr/0009](0009-confine-after-start-to-image-code.md).
+
 `harden_mounted_volumes` no longer runs `find "${project_root}" -name ".htaccess" -exec chown
 root:www-data {} +` and its matching `chmod 644` pass, or the log line above them. A comment stands
 in their place pointing here.
