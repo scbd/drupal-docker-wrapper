@@ -1,0 +1,49 @@
+Restrict the Automatic Translation tab to this module's own permission
+
+On Drupal 11.4.0+, the content_translation access_callback became the
+"service:method" string "content_translation.manager:access", which plain
+call_user_func() cannot resolve, throwing:
+"TypeError: call_user_func(): Argument #1 ($callback) must be a valid callback,
+function 'content_translation.manager:access' not found or invalid function
+name" at AutoNodeTranslateAccessCheck.php:57 on Drupal 11.4.1.
+
+Resolving and calling that callback (an OR-clause) grants the Automatic
+Translation tab to every role that can otherwise translate content
+(create/update/delete content translations, or "translate editable entities").
+Instead, gate access solely on this module's own
+"auto translate {bundle} {entity_type}" permission. This fixes the TypeError and
+keeps the tab restricted to the roles the site explicitly grants it to.
+
+Issue: https://www.drupal.org/project/auto_node_translate/issues/3609236
+
+--- a/src/Access/AutoNodeTranslateAccessCheck.php
++++ b/src/Access/AutoNodeTranslateAccessCheck.php
+@@ -49,22 +49,18 @@
+     if ($entity && $entity->isTranslatable()) {
+       // Get entity base info.
+       $bundle = $entity->bundle();
+-
+-      // Get entity access callback.
+       $definition = $this->entityTypeManager->getDefinition($entity_type_id);
+-      $translation = $definition->get('translation');
+-      $access_callback = $translation['content_translation']['access_callback'];
+-      $access = call_user_func($access_callback, $entity);
+-      if ($access->isAllowed()) {
+-        return $access;
+-      }
+
+-      // Check per entity permission.
++      // Gate access solely on this module's own "auto translate" permission so
++      // the Automatic Translation tab is not exposed to every role that can
++      // otherwise translate content. The content_translation access_callback
++      // OR-clause was intentionally removed here; see issue #3609236. This also
++      // avoids the call_user_func() TypeError on the "service:method" callback.
+       $permission = "auto translate {$entity_type_id}";
+       if ($definition->getPermissionGranularity() == 'bundle') {
+         $permission = "auto translate {$bundle} {$entity_type_id}";
+       }
+-      return AccessResult::allowedIfHasPermission($account, $permission)->inheritCacheability($access);
++      return AccessResult::allowedIfHasPermission($account, $permission);
+     }
+
+     // No opinion.
